@@ -122,3 +122,5 @@ secret.key
 graphify-out/
 bench-results.json
 ci-data/
+
+.claude/

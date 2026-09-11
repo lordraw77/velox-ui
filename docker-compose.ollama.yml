@@ -10,27 +10,27 @@
 services:
   velox-ui:
     image: velox-ui:latest
-    # build: .
+    build: .
     container_name: velox-ui
     restart: unless-stopped
-    depends_on:
-      - ollama
+    # depends_on:
+    #   - ollama
     ports:
-      - "8080:8080"
+      - "9080:8080"
     volumes:
       - velox-data:/data
     environment:
-      VELOX_PROVIDER_OLLAMA_HOSTS: http://ollama:11434
+      VELOX_PROVIDER_OLLAMA_HOSTS: http://192.168.0.140:11434
       VELOX_LOG_FORMAT: json
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    volumes:
-      - ollama-models:/root/.ollama
-    ports:
-      - "11434:11434"
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama-models:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
     # Uncomment for an NVIDIA GPU. Everything works without it, only slower — a
     # CPU-only host is a supported configuration, not a degraded one (ADR-0008).
     # deploy:
