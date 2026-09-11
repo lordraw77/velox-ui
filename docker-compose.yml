@@ -1,0 +1,29 @@
+# Minimal deployment: velox-ui alone, SQLite in a volume, no other services.
+#
+#   docker compose up -d
+#
+# Then open http://localhost:8080 and create the first account, which becomes the
+# administrator. If Ollama is already running on the host, velox-ui finds it by itself.
+
+services:
+  velox-ui:
+    image: velox-ui:latest
+    # Comment `image` and uncomment `build` to run from a source checkout.
+    # build: .
+    container_name: velox-ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - velox-data:/data
+    environment:
+      # Generated into /data on first run when unset. Set it explicitly to keep
+      # stored provider credentials readable across a rebuilt volume.
+      # VELOX_SECRET_KEY: "change-me"
+      VELOX_LOG_FORMAT: json
+    # Lets the container reach an Ollama or llama.cpp server running on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  velox-data:

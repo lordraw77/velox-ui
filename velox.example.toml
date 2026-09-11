@@ -1,0 +1,75 @@
+# velox-ui configuration.
+#
+# Every setting here has a working default, so this file is optional: velox-ui runs
+# with no configuration at all. Copy it to velox.toml only to change something.
+#
+# Any setting can also be given as an environment variable, which always wins over
+# this file. The variable name is VELOX_ followed by the setting's path, joined by
+# underscores and uppercased:
+#
+#   port                    -> VELOX_PORT
+#   db.url                  -> VELOX_DB_URL
+#   auth.access_token_ttl_s -> VELOX_AUTH_ACCESS_TOKEN_TTL_S
+
+# Bind address. The default listens on every interface, which is what a self-hosted
+# server on a home network normally wants. Use "127.0.0.1" to restrict it to this host.
+host = "0.0.0.0"
+port = 8080
+
+# Writable directory for the database, uploads and the generated secret key.
+data_dir = "./data"
+
+# ASGI server: "granian" (default) or "uvicorn".
+server = "granian"
+
+# Worker processes. One is deliberate: more would fragment the in-process caches and
+# the SQLite writer without helping, since the workload is I/O bound on the model.
+workers = 1
+
+log_level = "INFO"
+# "json" for deployments, "console" when a person is watching a terminal.
+log_format = "json"
+
+# Encrypts stored provider credentials and signs session tokens. Generated into
+# data_dir/secret.key on first run if left empty. Losing it means re-entering every
+# provider API key, so back it up with the database.
+secret_key = ""
+
+# Extra browser origins allowed to call this instance. The bundled interface is served
+# from the same origin and needs none of these.
+cors_origins = []
+
+[db]
+# Empty means SQLite inside data_dir, which needs no setup and no other container.
+# For PostgreSQL: "postgresql+asyncpg://velox:password@localhost:5432/velox"
+url = ""
+echo = false
+pool_size = 5
+# Apply pending migrations at startup. Turn this off only when a deployment applies
+# them out of band, with `velox migrate up`.
+auto_migrate = true
+
+[auth]
+# Set to false for a single-user instance: every request then runs as one built-in
+# local account and there is no login screen.
+enabled = true
+
+# Allow anyone who can reach the instance to create an account. The first account is
+# always the administrator regardless of this setting.
+open_registration = false
+
+access_token_ttl_s = 900        # 15 minutes
+refresh_token_ttl_s = 2592000   # 30 days
+
+# Create this administrator at first startup. Leave admin_password empty to instead
+# let the first person who registers claim the administrator account — no password is
+# ever generated and written to the log.
+admin_email = "admin@velox.local"
+admin_password = ""
+
+[metrics]
+# Serve Prometheus metrics at /metrics.
+enabled = true
+# Require an administrator token to scrape. Off by default because the endpoint is
+# normally only reachable from inside the deployment network.
+require_auth = false

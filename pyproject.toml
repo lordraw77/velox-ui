@@ -1,0 +1,116 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "velox-ui"
+version = "0.1.0"
+description = "A fast, self-hosted frontend for local and remote LLMs."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+authors = [{ name = "velox-ui contributors" }]
+keywords = ["llm", "ollama", "llama.cpp", "chat", "self-hosted"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: FastAPI",
+  "Intended Audience :: End Users/Desktop",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+  "fastapi>=0.115",
+  "granian>=1.7",
+  "msgspec>=0.19",
+  "sqlalchemy[asyncio]>=2.0.36",
+  "aiosqlite>=0.20",
+  "alembic>=1.14",
+  "httpx[http2]>=0.28",
+  "pydantic[email]>=2.9",
+  "argon2-cffi>=23.1",
+  "pyjwt>=2.10",
+  "cryptography>=43.0",
+  "prometheus-client>=0.21",
+  "python-multipart>=0.0.18",
+]
+
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.30"]
+uvicorn = ["uvicorn[standard]>=0.32"]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "mypy>=1.13",
+  "ruff>=0.8",
+  "types-pyyaml",
+]
+
+[project.scripts]
+velox = "velox_ui.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/lordraw77/velox-ui"
+Documentation = "https://github.com/lordraw77/velox-ui/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/velox_ui"]
+
+[tool.ruff]
+line-length = 96
+target-version = "py312"
+src = ["src", "tests", "bench"]
+
+[tool.ruff.lint]
+select = [
+  "E", "F", "W",      # pycodestyle, pyflakes
+  "I",                # isort
+  "N",                # pep8-naming
+  "UP",               # pyupgrade
+  "B",                # bugbear
+  "C4",               # comprehensions
+  "SIM",              # simplify
+  "RUF",
+  "ASYNC",            # async correctness
+  "S",                # bandit
+  "D",                # pydocstyle
+  "ANN",              # missing annotations
+]
+ignore = [
+  "D203",   # conflicts with D211
+  "D213",   # conflicts with D212
+  "ANN401", # Any is deliberate in a few escape hatches
+  # The error taxonomy uses noun-phrase names on purpose: ContextOverflow,
+  # ModelLoading and OutOfMemory read as the condition they describe, and an
+  # "Error" suffix on every one of them adds noise without information.
+  "N818",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "D", "ANN"]  # fixtures hold fake credentials by design
+"bench/**" = ["S", "D", "ANN", "ASYNC220", "ASYNC240"]  # benchmarks must start real processes
+"src/velox_ui/db/migrations/**" = ["D", "ANN", "N"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/velox_ui"]
+plugins = []
+warn_unreachable = true
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = ["granian.*", "sqlite_vec.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+  "contract: provider contract tests against fake backends",
+  "bench: performance gate, run by bench/harness.py",
+]

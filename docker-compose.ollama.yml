@@ -1,0 +1,46 @@
+# velox-ui together with Ollama.
+#
+#   docker compose -f docker-compose.ollama.yml up -d
+#   docker compose -f docker-compose.ollama.yml exec ollama ollama pull llama3.2
+#
+# velox-ui probes the well-known local ports at first start, so the Ollama service
+# below is configured automatically; VELOX_PROVIDER_OLLAMA_HOSTS just makes it explicit
+# and removes the guesswork from a scripted deployment.
+
+services:
+  velox-ui:
+    image: velox-ui:latest
+    # build: .
+    container_name: velox-ui
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "8080:8080"
+    volumes:
+      - velox-data:/data
+    environment:
+      VELOX_PROVIDER_OLLAMA_HOSTS: http://ollama:11434
+      VELOX_LOG_FORMAT: json
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    # Uncomment for an NVIDIA GPU. Everything works without it, only slower — a
+    # CPU-only host is a supported configuration, not a degraded one (ADR-0008).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  velox-data:
+  ollama-models:

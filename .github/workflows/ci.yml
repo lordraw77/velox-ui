@@ -1,0 +1,112 @@
+# Continuous integration.
+#
+# The performance suite runs here as a gate, not as a report: a regression past a
+# stated target fails the build (ADR-0015). It uses deterministic local fixtures, so it
+# needs no GPU, no network and no API key.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv pip install -e '.[dev,postgres,uvicorn]'
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python }}
+      - run: uv pip install -e '.[dev,postgres,uvicorn]'
+      - run: pytest
+
+  server-matrix:
+    # Both supported ASGI servers must actually boot and serve, or the uvicorn
+    # fallback promised in ADR-0002 quietly stops being true.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        server: [granian, uvicorn]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv pip install -e '.[dev,uvicorn]'
+      - name: Start and probe
+        env:
+          VELOX_SERVER: ${{ matrix.server }}
+          VELOX_DATA_DIR: ./ci-data
+        run: |
+          velox serve --port 8080 &
+          for _ in $(seq 1 60); do
+            sleep 0.5
+            curl -sf http://127.0.0.1:8080/ready && break
+          done
+          curl -sf http://127.0.0.1:8080/ready
+          curl -sf http://127.0.0.1:8080/api/version
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: velox-ui:latest
+          load: true
+      - name: Enforce the image size budget
+        run: |
+          BYTES=$(docker image inspect velox-ui:latest --format '{{.Size}}')
+          MB=$((BYTES / 1024 / 1024))
+          echo "image size: ${MB} MB (budget: 250 MB)"
+          test "$MB" -le 250
+      - name: Smoke test the container
+        run: |
+          docker run -d --name velox -p 8080:8080 velox-ui:latest
+          for _ in $(seq 1 60); do
+            sleep 0.5
+            curl -sf http://127.0.0.1:8080/ready && break
+          done
+          curl -sf http://127.0.0.1:8080/ready
+
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv pip install -e '.[dev]'
+      - name: Run the performance gates
+        run: python -m bench --json bench-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: bench-results.json
