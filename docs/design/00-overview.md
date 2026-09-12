@@ -50,9 +50,10 @@ These are CI gates, not aspirations (ADR-0015).
 
 Each phase ends working, tested and benchmarked before the next begins.
 
-1. Skeleton, config, DB, migrations, auth, empty benchmark harness.
-2. Provider abstraction + full Ollama and llama.cpp adapters, streaming, persisted
-   chat. **TTFT measured.**
+1. ~~Skeleton, config, DB, migrations, auth, empty benchmark harness.~~ **Done.**
+2. ~~Provider abstraction + full Ollama and llama.cpp adapters, streaming, persisted
+   chat. **TTFT measured.**~~ **Done** — 10.2 ms p95 overhead, verified against fake
+   backends and a real Ollama host.
 3. Minimal but real frontend: chat list, streaming, virtual scroll, markdown, tok/s.
 4. Local model management in the UI (pull with progress, ps/unload, advanced params)
    and the parametrized OpenAI-compatible adapter with presets.

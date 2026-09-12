@@ -29,6 +29,7 @@ __all__ = [
     "AuthSettings",
     "DatabaseSettings",
     "LogFormat",
+    "ProviderSettings",
     "ServerKind",
     "Settings",
     "SettingsError",
@@ -111,6 +112,29 @@ class MetricsSettings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     require_auth: bool = False
 
 
+class ProviderSettings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    """Statically configured local backends.
+
+    This is the phase-2 path: hosts are named directly rather than through the
+    database-backed provider CRUD the design describes, which lands with local model
+    management in phase 4. A configured host needs no API key and an unreachable one
+    is a normal, silent state (ADR-0008) — nothing here fails startup.
+
+    Attributes:
+        ollama_hosts: Base URLs of Ollama instances, each registered as
+            ``ollama-0``, ``ollama-1``, ... in listing order.
+        llamacpp_hosts: Base URLs of ``llama-server`` instances, registered as
+            ``llamacpp-0``, ``llamacpp-1``, ...
+        autodiscover: Probe the well-known local ports (11434, 8080, 1234, 8000) at
+            startup when no hosts are configured at all, and use whichever answers.
+            Never scans the LAN; that stays a manual, explicit action.
+    """
+
+    ollama_hosts: tuple[str, ...] = ()
+    llamacpp_hosts: tuple[str, ...] = ()
+    autodiscover: bool = True
+
+
 class Settings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     """Top-level configuration.
 
@@ -146,6 +170,7 @@ class Settings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     db: DatabaseSettings = msgspec.field(default_factory=DatabaseSettings)
     auth: AuthSettings = msgspec.field(default_factory=AuthSettings)
     metrics: MetricsSettings = msgspec.field(default_factory=MetricsSettings)
+    providers: ProviderSettings = msgspec.field(default_factory=ProviderSettings)
     config_path: Path | None = None
 
     @property
@@ -208,7 +233,8 @@ def _collect_env_overrides(
         raw = os.environ.get(variable)
         if raw is None:
             continue
-        overrides[field.name] = _split_list(raw) if field.name == "cors_origins" else raw
+        list_fields = {"cors_origins", "ollama_hosts", "llamacpp_hosts"}
+        overrides[field.name] = _split_list(raw) if field.name in list_fields else raw
     return overrides
 
 

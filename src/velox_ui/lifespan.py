@@ -49,8 +49,50 @@ async def build_state(settings: Settings) -> AppState:
 
     state = AppState(settings, database)
     await _bootstrap_accounts(state)
+    _configure_providers(state)
     state.started_at_ms = now_ms()
     return state
+
+
+def _configure_providers(state: AppState) -> None:
+    """Register the configured inference backends.
+
+    Explicitly configured hosts always win. Autodiscovery runs only when nothing at all
+    was configured, so it can never silently add a host to a deliberate setup — and it
+    runs in the background, because startup must not wait on the network. A probe to a
+    host that is switched off is a normal outcome, not a reason to delay readiness
+    (ADR-0008).
+
+    Registering a host builds no adapter and opens no connection: the registry
+    constructs adapters on first use.
+    """
+    settings = state.settings.providers
+    for index, base_url in enumerate(settings.ollama_hosts):
+        state.providers.add_ollama(f"ollama-{index}", base_url)
+    for index, base_url in enumerate(settings.llamacpp_hosts):
+        state.providers.add_llamacpp(f"llamacpp-{index}", base_url)
+
+    if settings.ollama_hosts or settings.llamacpp_hosts:
+        _log.info(
+            "configured inference backends",
+            extra={"providers": state.providers.provider_ids},
+        )
+        return
+    if settings.autodiscover:
+        state.schedule(_autodiscover(state))
+
+
+async def _autodiscover(state: AppState) -> None:
+    """Probe the well-known local ports and register whatever answers."""
+    from velox_ui.providers.discovery import probe_local_backends
+
+    for index, found in enumerate(await probe_local_backends(state.http)):
+        if found.kind == "ollama":
+            state.providers.add_ollama(f"ollama-{index}", found.base_url)
+        elif found.kind == "llamacpp":
+            state.providers.add_llamacpp(f"llamacpp-{index}", found.base_url)
+        # openai_compat backends are registered from phase 4, when the parametrized
+        # adapter and its presets land.
 
 
 async def _bootstrap_accounts(state: AppState) -> None:
@@ -125,6 +167,7 @@ def lifespan_for(settings: Settings) -> object:
             yield
         finally:
             await state.drain()
+            await state.close_http()
             await state.db.dispose()
             _log.info("velox-ui stopped")
 

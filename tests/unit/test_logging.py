@@ -44,3 +44,60 @@ def test_short_values_are_not_registered() -> None:
     record = _record("abc is a common substring")
     RedactionFilter().filter(record)
     assert "abc" in record.getMessage()
+
+
+def test_no_log_call_uses_a_reserved_record_attribute() -> None:
+    """Guard against a bug this project already shipped once.
+
+    ``logger.warning(..., extra={"message": x})`` does not log oddly — Python's
+    logging module raises ``KeyError`` because ``message`` is a ``LogRecord``
+    attribute. In an exception handler that turns a typed, actionable error into an
+    opaque 500. The names are not guessable by reading the logging docs casually, so
+    this scans for them instead of trusting review.
+    """
+    import ast
+    import pathlib
+
+    reserved = {
+        "args",
+        "asctime",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "message",
+        "module",
+        "msecs",
+        "msg",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "taskName",
+        "thread",
+        "threadName",
+    }
+
+    offenders: list[str] = []
+    for path in pathlib.Path("src/velox_ui").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg != "extra" or not isinstance(keyword.value, ast.Dict):
+                    continue
+                for key in keyword.value.keys:
+                    if isinstance(key, ast.Constant) and key.value in reserved:
+                        offenders.append(f"{path}:{node.lineno} extra={{'{key.value}': ...}}")
+
+    assert not offenders, (
+        "these log calls pass a reserved LogRecord attribute in `extra`, which raises "
+        f"KeyError at runtime: {offenders}"
+    )

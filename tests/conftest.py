@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from velox_ui.app import create_app
-from velox_ui.settings import AuthSettings, DatabaseSettings, Settings
+from velox_ui.settings import AuthSettings, DatabaseSettings, ProviderSettings, Settings
 
 TEST_SECRET = "test-secret-key-0123456789abcdef"
 
@@ -37,6 +37,10 @@ def settings(data_dir: Path) -> Settings:
         secret_key=TEST_SECRET,
         db=DatabaseSettings(url=f"sqlite+aiosqlite:///{(data_dir / 'test.db').as_posix()}"),
         auth=AuthSettings(access_token_ttl_s=60, refresh_token_ttl_s=3600),
+        # Autodiscovery is off in tests: a developer with Ollama running on the
+        # standard port would otherwise silently get a real backend registered
+        # inside their test instance.
+        providers=ProviderSettings(autodiscover=False),
         log_level="ERROR",
     )
 

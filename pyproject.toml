@@ -27,7 +27,12 @@ dependencies = [
   "aiosqlite>=0.20",
   "alembic>=1.14",
   "httpx[http2]>=0.28",
-  "pydantic[email]>=2.9",
+  # Plain pydantic, deliberately not pydantic[email]: velox-ui validates addresses
+  # itself because a strict RFC validator rejects the internal domains self-hosted
+  # instances actually live on (see velox_ui.api.schemas.fields). Leaving
+  # email-validator installed is not harmless — FastAPI imports it on sight, costing
+  # roughly 25 ms of every process start.
+  "pydantic>=2.9",
   "argon2-cffi>=23.1",
   "pyjwt>=2.10",
   "cryptography>=43.0",

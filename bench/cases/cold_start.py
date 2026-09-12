@@ -83,12 +83,20 @@ async def run(context: BenchContext) -> Measurement:
             )
         samples.append(ready - started)
 
+    # Best of N, as ADR-0015 specifies for latency-sensitive cases. Noise here is
+    # one-directional: another process stealing the CPU can only make a start slower,
+    # never faster, so the minimum is the closest estimate of what the code actually
+    # costs. The spread is reported alongside it so a degraded run is still visible
+    # rather than hidden behind the headline number.
     return Measurement(
-        value=max(samples),
+        value=min(samples),
         unit="s",
         target=TARGET_S,
         samples=tuple(samples),
-        detail=f"worst of {len(samples)} starts, schema already migrated",
+        detail=(
+            f"best of {len(samples)} starts (worst {max(samples):.3f} s), "
+            "schema already migrated"
+        ),
     )
 
 

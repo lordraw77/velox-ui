@@ -11,11 +11,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from velox_ui.db.engine import Database
+from velox_ui.providers.registry import ProviderRegistry
 from velox_ui.security.crypto import SecretBox
 from velox_ui.settings import Settings
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; importing httpx here would
+    # undo the whole point of the lazy client below.
+    import httpx
 
 __all__ = ["AppState"]
 
@@ -29,20 +34,54 @@ class AppState:
         settings: The validated configuration.
         db: The database.
         secrets: The credential encryption box.
+        http: The one HTTP client every provider adapter shares.
+        providers: The configured inference backends.
         local_user_id: The built-in account used when authentication is disabled.
         started_at_ms: When the process finished starting, for uptime reporting.
     """
 
-    __slots__ = ("_tasks", "db", "local_user_id", "secrets", "settings", "started_at_ms")
+    __slots__ = (
+        "_http",
+        "_tasks",
+        "db",
+        "local_user_id",
+        "providers",
+        "secrets",
+        "settings",
+        "started_at_ms",
+    )
 
     def __init__(self, settings: Settings, db: Database) -> None:
         """Build the state around an already-created database."""
         self.settings = settings
         self.db = db
         self.secrets = SecretBox(settings.secret_key)
+        self.providers = ProviderRegistry(lambda: self.http)
         self.local_user_id: str | None = None
         self.started_at_ms = 0
+        self._http: httpx.AsyncClient | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
+
+    @property
+    def http(self) -> httpx.AsyncClient:
+        """The shared HTTP client, created the first time something needs it.
+
+        Importing httpx and constructing an HTTP/2-capable client costs well over a
+        tenth of the one-second cold-start budget, and an instance that has not been
+        asked to talk to a backend yet has no use for either. The cost moves to the
+        first provider call, where it is small next to the model's own latency.
+        """
+        if self._http is None:
+            from velox_ui.providers.httpclient import build_http_client
+
+            self._http = build_http_client()
+        return self._http
+
+    async def close_http(self) -> None:
+        """Close the HTTP client if one was ever built."""
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
 
     def schedule(self, coro: Coroutine[Any, Any, Any]) -> None:
         """Run a coroutine in the background without awaiting it.
@@ -52,9 +91,22 @@ class AppState:
         Failures are logged rather than swallowed: a background write that silently
         disappears is the kind of bug that surfaces days later as missing data.
         """
+        self.spawn(coro)
+
+    def spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
+        """Start a tracked background task and return it.
+
+        Use this over :meth:`schedule` when the work must survive the cancellation of
+        whatever started it. A request task that is cancelled — a client closing a
+        stream — carries its cancellation into every ``await`` still running inside it,
+        including the ``rollback`` a database session performs on the way out. That
+        leaks the connection. Work that must complete regardless belongs in its own
+        task, which this creates.
+        """
         task = asyncio.create_task(coro)
         self._tasks.add(task)
         task.add_done_callback(self._finish_task)
+        return task
 
     def _finish_task(self, task: asyncio.Task[Any]) -> None:
         """Drop the reference and report an unexpected failure."""
