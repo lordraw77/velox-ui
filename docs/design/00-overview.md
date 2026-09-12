@@ -40,7 +40,7 @@ primary use case, not a fallback.
 | Docker image | < 250 MB | `bench/cases/image_size.py` |
 | Open a 5 000-message chat | < 150 ms end-to-end | `bench/cases/open_chat_5k.py` |
 | Chat list over 10 000 chats | < 30 ms query | `bench/cases/chat_list_10k.py` |
-| Frontend bundle | < 200 KB gzip | build check |
+| Frontend bundle | < 200 KB gzip | `bench/cases/bundle_size.py` |
 | Streaming at 500+ tok/s | no added backpressure | `bench/cases/stream_throughput.py` |
 | Usable against a 1-2 tok/s host | no timeout, no stall | `bench/cases/slow_backend.py` |
 

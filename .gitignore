@@ -115,6 +115,7 @@ graphify-out/cache/
 # ---------------------------------------------------------------
 data/
 velox.toml
+src/velox_ui/web/
 *.db
 *.db-wal
 *.db-shm

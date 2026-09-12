@@ -60,6 +60,9 @@ Documentation = "https://github.com/lordraw77/velox-ui/tree/main/docs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/velox_ui"]
+# The compiled interface travels in the wheel, so `pip install velox-ui` yields a
+# working web UI with no Node involved at any point.
+artifacts = ["src/velox_ui/web/**"]
 
 [tool.ruff]
 line-length = 96

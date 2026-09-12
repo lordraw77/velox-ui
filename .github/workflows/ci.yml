@@ -28,7 +28,34 @@ jobs:
       - run: ruff format --check .
       - run: mypy
 
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - name: Type-check
+        run: npm run check
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - name: Enforce the bundle budget
+        run: npm run size
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: src/velox_ui/web
+
   test:
+    needs: frontend
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -41,6 +68,13 @@ jobs:
           enable-cache: true
       - run: uv python install ${{ matrix.python }}
       - run: uv pip install -e '.[dev,postgres,uvicorn]'
+      # The static-serving tests skip themselves without a build, so the suite passes
+      # either way; running them for real is worth one artifact download.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: web
+          path: src/velox_ui/web
       - run: pytest
 
   server-matrix:
@@ -95,6 +129,7 @@ jobs:
           curl -sf http://127.0.0.1:8080/ready
 
   bench:
+    needs: frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,6 +138,11 @@ jobs:
           enable-cache: true
       - run: uv python install 3.12
       - run: uv pip install -e '.[dev]'
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: web
+          path: src/velox_ui/web
       - name: Run the performance gates
         run: python -m bench --json bench-results.json
       - uses: actions/upload-artifact@v4

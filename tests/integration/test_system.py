@@ -48,6 +48,18 @@ def test_metrics_exposes_the_histograms(client: TestClient) -> None:
 
 
 def test_metrics_labels_use_the_route_template(client: TestClient) -> None:
-    # Labelling by raw path would let any caller create unbounded metric series.
+    """Metric labels must be bounded, whatever path a caller invents.
+
+    Labelling by raw path would let anyone create unlimited metric series by
+    requesting random URLs, which is a denial-of-service against the monitoring
+    rather than against the server.
+    """
     client.get("/api/nope-does-not-exist")
-    assert 'route="unmatched"' in client.get("/metrics").text
+    client.get("/another-invented-path")
+    body = client.get("/metrics").text
+
+    assert "/api/nope-does-not-exist" not in body
+    assert "/another-invented-path" not in body
+    # Unmatched paths land on a template: the API 404 handler or the single-page
+    # fallback, depending on whether the interface has been built.
+    assert 'route="unmatched"' in body or 'route="/{path' in body

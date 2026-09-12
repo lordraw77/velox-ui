@@ -1,0 +1,460 @@
+/*
+ * The design system, such as it is: tokens and a handful of primitives, no component
+ * library (ADR-0012). A library would be the single largest thing in a 200 KB budget,
+ * and this interface has perhaps fifteen distinct elements.
+ *
+ * Theming has three states, not two. An explicit choice stamps `data-theme` on the
+ * root; the default follows the operating system through `prefers-color-scheme`. Every
+ * colour is defined once on bare `:root` and only *redefined* in the dark block, so a
+ * token can never exist in one theme and be missing from the other.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #fbfbfa;
+  --bg-raised: #ffffff;
+  --bg-sunken: #f2f2f0;
+  --bg-hover: #ececea;
+  --bg-active: #e2e2df;
+
+  --text: #1b1b19;
+  --text-muted: #6b6b66;
+  --text-faint: #9a9a93;
+
+  --border: #e2e2dd;
+  --border-strong: #cfcfc8;
+
+  --accent: #1f6feb;
+  --accent-text: #ffffff;
+  --accent-soft: #e8f0fe;
+
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --warn: #b54708;
+  --warn-soft: #fffaeb;
+  --ok: #067647;
+
+  --code-bg: #f6f6f4;
+
+  --radius: 8px;
+  --radius-sm: 5px;
+  --shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 4px 12px rgb(0 0 0 / 4%);
+
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  --sidebar-width: 268px;
+  --content-width: 46rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17171a;
+    --bg-raised: #1e1e22;
+    --bg-sunken: #121215;
+    --bg-hover: #26262b;
+    --bg-active: #2f2f36;
+
+    --text: #ececef;
+    --text-muted: #a0a0a8;
+    --text-faint: #70707a;
+
+    --border: #2c2c32;
+    --border-strong: #3d3d45;
+
+    --accent: #4c8dff;
+    --accent-text: #0b1220;
+    --accent-soft: #1b2942;
+
+    --danger: #ff7b6b;
+    --danger-soft: #2c1a18;
+    --warn: #f0a35e;
+    --warn-soft: #2a1f12;
+    --ok: #56d391;
+
+    --code-bg: #16161a;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 30%);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #17171a;
+  --bg-raised: #1e1e22;
+  --bg-sunken: #121215;
+  --bg-hover: #26262b;
+  --bg-active: #2f2f36;
+
+  --text: #ececef;
+  --text-muted: #a0a0a8;
+  --text-faint: #70707a;
+
+  --border: #2c2c32;
+  --border-strong: #3d3d45;
+
+  --accent: #4c8dff;
+  --accent-text: #0b1220;
+  --accent-soft: #1b2942;
+
+  --danger: #ff7b6b;
+  --danger-soft: #2c1a18;
+  --warn: #f0a35e;
+  --warn-soft: #2a1f12;
+  --ok: #56d391;
+
+  --code-bg: #16161a;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 30%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- primitives ------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.42rem 0.8rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.btn:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+.btn-icon {
+  padding: 0.38rem;
+  line-height: 1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.field input {
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.field input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.badge {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  padding: 0.08rem 0.38rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.badge-local {
+  color: var(--ok);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.badge-offline {
+  color: var(--text-faint);
+  border-style: dashed;
+}
+
+.spinner {
+  width: 0.85em;
+  height: 0.85em;
+  border: 2px solid color-mix(in srgb, currentcolor 25%, transparent);
+  border-top-color: currentcolor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Respect a reduced-motion preference: the spinner is decoration, not information. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- rendered markdown ------------------------------------------------------ */
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p,
+.md ul,
+.md ol,
+.md blockquote,
+.md pre,
+.md table {
+  margin: 0 0 0.75rem;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 1.2rem 0 0.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.md h1 {
+  font-size: 1.35rem;
+}
+
+.md h2 {
+  font-size: 1.18rem;
+}
+
+.md h3 {
+  font-size: 1.05rem;
+}
+
+.md a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.md code {
+  padding: 0.1em 0.32em;
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.md pre {
+  /* Wide code scrolls inside its own box; the page never scrolls sideways. */
+  overflow-x: auto;
+  padding: 0.7rem 0.85rem;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.md pre code {
+  padding: 0;
+  font-size: 0.85em;
+  background: none;
+  border: none;
+}
+
+.md blockquote {
+  padding-left: 0.85rem;
+  color: var(--text-muted);
+  border-left: 3px solid var(--border-strong);
+}
+
+.md table {
+  display: block;
+  overflow-x: auto;
+  font-size: 0.9em;
+  border-collapse: collapse;
+}
+
+.md th,
+.md td {
+  padding: 0.35rem 0.6rem;
+  text-align: left;
+  border: 1px solid var(--border);
+}
+
+.md th {
+  background: var(--bg-sunken);
+}
+
+.md ul,
+.md ol {
+  padding-left: 1.4rem;
+}
+
+.md li + li {
+  margin-top: 0.2rem;
+}
+
+.md img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+}
+
+.md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* The tail of a streaming block, before it is formatted. */
+.md-tail {
+  font-family: inherit;
+  white-space: pre-wrap;
+}
+
+/* --- syntax highlighting ---------------------------------------------------- */
+/* A small palette rather than a highlight.js theme: two themes' worth of CSS for
+   a handful of token classes is not a good use of the budget. */
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-doctag,
+.hljs-type,
+.hljs-name,
+.hljs-strong {
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  font-weight: 600;
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-attr,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+  color: var(--ok);
+}
+
+.hljs-number,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-regexp,
+.hljs-link {
+  color: var(--warn);
+}
+
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-class .hljs-title,
+.hljs-function .hljs-title {
+  color: color-mix(in srgb, var(--accent) 60%, var(--text));
+}
+
+.hljs-deletion,
+.hljs-meta {
+  color: var(--danger);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}

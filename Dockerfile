@@ -8,6 +8,19 @@
 # embeddings run on ONNX Runtime and are downloaded on first use, into the data volume
 # rather than baked into the image (ADR-0010).
 
+# The interface is compiled here and copied into the Python package, so the runtime
+# image carries no Node at all -- one of the project's anti-requirements.
+FROM node:22-slim AS frontend
+
+WORKDIR /build/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY frontend/ ./
+COPY src/velox_ui/__init__.py /build/src/velox_ui/__init__.py
+RUN npm run build && node scripts/check-size.mjs
+
+
 FROM python:3.12-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,6 +41,8 @@ RUN uv venv /opt/venv \
 
 COPY src ./src
 COPY alembic.ini ./
+# The built interface, so `pip install` inside the image picks it up as package data.
+COPY --from=frontend /build/src/velox_ui/web ./src/velox_ui/web
 RUN VIRTUAL_ENV=/opt/venv uv pip install --no-cache --no-deps . \
  && find /opt/venv -name '__pycache__' -type d -prune -exec rm -rf {} + \
  && find /opt/venv -name '*.dist-info' -type d -exec rm -rf {}/RECORD \; 2>/dev/null || true

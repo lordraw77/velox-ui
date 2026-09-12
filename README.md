@@ -7,13 +7,14 @@ with Open WebUI, built for latency and a small footprint.
 loading a model is reported as its own state rather than as a timeout, and a host that
 is switched off degrades to an offline badge instead of an error.
 
-> **Status: phase 2 of 10.** The foundation and the inference path are in place and
-> measured: configuration, database, authentication, the conversation tree, the
-> provider abstraction, and complete Ollama and llama.cpp adapters with streaming,
-> branching and persistence. Verified against both fake backends and a real Ollama
-> host. There is no web interface yet — that is phase 3, and until then the API is
-> the product. The plan is in [docs/design/00-overview.md](docs/design/00-overview.md);
-> nothing below is claimed to work unless it is marked as shipped.
+> **Status: phase 3 of 10.** There is a working product: configuration, database,
+> authentication, the conversation tree, the provider abstraction with complete Ollama
+> and llama.cpp adapters, and a web interface with streaming, virtual scrolling,
+> markdown and per-reply speed metrics. Verified in a real browser against a real
+> Ollama host. Still to come: local model management from the UI (phase 4), cloud
+> providers (5), search and multi-user (6), RAG (7), tools and MCP (8). The plan is in
+> [docs/design/00-overview.md](docs/design/00-overview.md); nothing below is claimed to
+> work unless it is marked as shipped.
 
 ## Quickstart
 
@@ -47,7 +48,7 @@ fork, with an architecture built around that last number.
 | Container image | < 250 MB | **186 MB** |
 | Open a 5 000-message conversation | < 150 ms | **103 ms** (storage half; see note) |
 | List 10 000 conversations | < 30 ms | **1.6 ms** |
-| Frontend bundle | < 200 KB gzip | phase 3 |
+| Frontend bundle | < 200 KB gzip | **30.7 KB** |
 
 Measured on a 4-core x86-64 Linux host with `python -m bench`, against deterministic
 local fixtures — no GPU, no network, no API key. Reproduce them yourself; the suite
@@ -77,6 +78,16 @@ half joins it in phase 3.
   ([ADR-0005](docs/adr/0005-persistence-off-the-hot-path.md)).
 - **Conversations are trees**: editing or regenerating adds a branch and never
   overwrites history ([ADR-0006](docs/adr/0006-message-tree-branching.md)).
+- **Frontend**: Svelte 5 runes, no component library, no router. Messages render
+  through a variable-height virtual list, so a five-thousand-message conversation puts
+  a dozen nodes in the DOM. Streaming tokens land in a buffer published once per
+  animation frame, updating one text node rather than the conversation. Markdown,
+  syntax highlighting and sanitisation run in a web worker, on completed blocks only
+  ([ADR-0012](docs/adr/0012-svelte5-virtual-scroll-worker.md)).
+- **Model output is never trusted**: raw HTML is escaped before the markdown parser
+  sees it, every link scheme is checked, and the Content-Security-Policy allows no
+  inline or evaluated script. A prompt injection that reaches the renderer still
+  cannot run code.
 
 ## Providers
 
@@ -142,7 +153,18 @@ ruff check . && ruff format --check .
 mypy
 pytest
 python -m bench
+
+# The interface. The build output lands in src/velox_ui/web, which the server serves
+# and the wheel ships, so there is no Node at runtime.
+npm --prefix frontend install
+npm --prefix frontend run check    # svelte-check
+npm --prefix frontend test
+npm --prefix frontend run build
+npm --prefix frontend run size     # enforces the bundle budget
 ```
+
+Running without building the interface is fine: the server says so at `/` and serves
+its API normally.
 
 No test requires an API key, a network or a real inference backend, and none ever will:
 provider adapters are verified against fake servers that replay each backend's real
