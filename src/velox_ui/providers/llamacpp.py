@@ -29,7 +29,9 @@ from velox_ui.providers.base import (
     Done,
     Health,
     HealthState,
+    ModelDetails,
     ModelInfo,
+    RunningModel,
     Status,
     StatusPhase,
     StreamEvent,
@@ -60,6 +62,27 @@ class LlamaCppProvider:
     """
 
     is_local = True
+    supported_params = frozenset(
+        {
+            "temperature",
+            "top_p",
+            "top_k",
+            "min_p",
+            "typical_p",
+            "tfs_z",
+            "repeat_penalty",
+            "presence_penalty",
+            "frequency_penalty",
+            "mirostat",
+            "mirostat_tau",
+            "mirostat_eta",
+            "penalize_nl",
+            "seed",
+            "stop",
+            "max_tokens",
+            "cache_prompt",
+        }
+    )
 
     def __init__(
         self,
@@ -67,12 +90,22 @@ class LlamaCppProvider:
         base_url: str,
         client: httpx.AsyncClient,
         *,
+        api_key: str | None = None,
         timeouts: Timeouts | None = None,
     ) -> None:
-        """Bind the adapter to a host."""
+        """Bind the adapter to a host.
+
+        Args:
+            provider_id: Identifier used in ``model_ref`` strings.
+            base_url: Server address.
+            client: The shared HTTP client.
+            api_key: Sent as a bearer token when the server runs with ``--api-key``.
+            timeouts: Per-phase timeout budget.
+        """
         self.provider_id = provider_id
         self.base_url = base_url.rstrip("/")
         self._client = client
+        self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.timeouts = timeouts or Timeouts()
         self._props_cache: dict[str, Any] | None = None
 
@@ -87,6 +120,7 @@ class LlamaCppProvider:
         try:
             response = await self._client.get(
                 f"{self.base_url}/v1/models",
+                headers=self._headers,
                 timeout=httpx.Timeout(self.timeouts.connect_s + 5.0),
             )
             if response.status_code < 400:
@@ -154,7 +188,9 @@ class LlamaCppProvider:
 
         started_generating = False
         try:
-            async with self._client.stream("POST", url, json=body, timeout=timeout) as response:
+            async with self._client.stream(
+                "POST", url, json=body, headers=self._headers, timeout=timeout
+            ) as response:
                 if response.status_code >= 400:
                     await self._raise_for_status(response, model=request.model)
 
@@ -203,6 +239,7 @@ class LlamaCppProvider:
         response = await self._client.post(
             f"{self.base_url}/embedding",
             json={"content": list(texts)},
+            headers=self._headers,
             timeout=httpx.Timeout(30.0),
         )
         if response.status_code >= 400:
@@ -240,6 +277,60 @@ class LlamaCppProvider:
         except (ValueError, KeyError):
             detail = response.text
         return Health(state=HealthState.DEGRADED, latency_ms=latency_ms, detail=detail[:200])
+
+    async def show(self, name: str) -> ModelDetails:
+        """Describe the served model from ``/props``."""
+        props = await self._props(refresh=True)
+        settings = props.get("default_generation_settings") or {}
+        context = props.get("n_ctx") or settings.get("n_ctx")
+        params = settings.get("params") or {}
+        return ModelDetails(
+            name=name,
+            context_length=int(context) if context else None,
+            capabilities=tuple(
+                key for key, enabled in (props.get("modalities") or {}).items() if enabled
+            ),
+            parameters={
+                key: value
+                for key, value in params.items()
+                if isinstance(value, (int, float, str, bool))
+            },
+            template=props.get("chat_template") or None,
+        )
+
+    async def running(self) -> list[RunningModel]:
+        """Report the loaded model and whether any slot is busy, from ``/slots``.
+
+        A ``llama-server`` process holds exactly the model it was started with, so this
+        is one entry; ``busy`` is what distinguishes a server that is working from one
+        that is idle.
+
+        Raises:
+            UnsupportedCapability: When the server was started with ``--no-slots``.
+        """
+        response = await self._client.get(
+            f"{self.base_url}/slots",
+            headers=self._headers,
+            timeout=httpx.Timeout(self.timeouts.connect_s + 5.0),
+        )
+        if response.status_code in (404, 501):
+            raise UnsupportedCapability(
+                "This llama-server does not expose /slots; it was started with --no-slots.",
+                provider_id=self.provider_id,
+            )
+        if response.status_code >= 400:
+            await self._raise_for_status(response)
+        slots = response.json()
+        models = await self.list_models()
+        if not isinstance(slots, list) or not models:
+            return []
+        return [
+            RunningModel(
+                name=models[0].key,
+                context_length=sum(int(slot.get("n_ctx") or 0) for slot in slots) or None,
+                busy=any(bool(slot.get("is_processing")) for slot in slots),
+            )
+        ]
 
     def _encode_request(self, request: ChatRequest) -> dict[str, Any]:
         """Translate the wire-neutral request into llama.cpp's ``/completion`` body.
@@ -314,7 +405,9 @@ class LlamaCppProvider:
         if self._props_cache is not None and not refresh:
             return self._props_cache
         response = await self._client.get(
-            f"{self.base_url}/props", timeout=httpx.Timeout(self.timeouts.connect_s + 5.0)
+            f"{self.base_url}/props",
+            headers=self._headers,
+            timeout=httpx.Timeout(self.timeouts.connect_s + 5.0),
         )
         if response.status_code >= 400:
             await self._raise_for_status(response)

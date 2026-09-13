@@ -55,6 +55,7 @@ from velox_ui.providers.base import (
 )
 from velox_ui.providers.errors import ProviderError
 from velox_ui.services.context import build_messages
+from velox_ui.services.model_params import merge_params
 from velox_ui.services.persistence import StreamWriter
 from velox_ui.state import AppState
 
@@ -296,6 +297,9 @@ class ChatService:
             ModelNotFound: If the reference names no configured provider.
         """
         resolved = await self._state.providers.resolve(model_ref)
+        # Saved per-model parameters are cached in-process, the absence of any
+        # included, so this costs a dictionary lookup on every turn after the first.
+        saved = await self._state.model_params.get(user_id, model_ref)
 
         async with self._state.db.session() as session:
             repository = ChatRepository(session)
@@ -324,7 +328,7 @@ class ChatService:
             request=ChatRequest(
                 model=resolved.model_key,
                 messages=tuple(messages),
-                params=params or SamplingParams(),
+                params=merge_params(saved, params or SamplingParams()),
             ),
         )
 

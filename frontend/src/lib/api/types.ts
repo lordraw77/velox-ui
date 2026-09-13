@@ -53,7 +53,15 @@ export interface ChatSummary {
 export interface Chat extends ChatSummary {
   active_leaf_id: string | null;
   created_at: number;
+  /** The newest page of the active branch, oldest first. */
   messages: Message[];
+  /** Cursor for the page before `messages`, or null when they reach the start. */
+  messages_cursor: string | null;
+}
+
+export interface MessagePage {
+  items: Message[];
+  next_cursor: string | null;
 }
 
 export interface ChatPage {
@@ -83,22 +91,132 @@ export interface ModelEntry {
   display_name: string;
   family: string | null;
   loaded: boolean | null;
+  parameter_size: string | null;
   capabilities: Capabilities;
 }
 
+/** Optional operations a backend supports; controls are shown only for these. */
+export type ProviderFeature = "show" | "running" | "pull" | "create" | "delete" | "copy" | "unload";
+
 export interface ProviderGroup {
   provider_id: string;
+  name: string;
   is_local: boolean;
+  supported_params: string[];
+  features: ProviderFeature[];
   models: ModelEntry[];
 }
 
 export type HealthState = "up" | "down" | "degraded" | "unknown";
 
-export interface ProviderHealth {
+export interface Health {
+  state: HealthState;
+  latency_ms: number | null;
+  detail: string | null;
+}
+
+export type ProviderOrigin = "config" | "autodiscovered" | "ui";
+
+export interface ProviderInfo {
   provider_id: string;
+  name: string;
+  kind: string | null;
+  preset: string | null;
+  origin: ProviderOrigin;
+  editable: boolean;
   is_local: boolean;
   base_url: string | null;
-  health: { state: HealthState; latency_ms: number | null; detail: string | null } | null;
+  credential_hint: string | null;
+  features: ProviderFeature[];
+  supported_params: string[];
+  health: Health | null;
+}
+
+export interface Preset {
+  key: string;
+  kind: string;
+  label: string;
+  base_url: string;
+  auth: "none" | "optional" | "required";
+  local: boolean | null;
+  docs_url: string;
+}
+
+export interface ProbeResult {
+  reachable: boolean;
+  kind: string | null;
+  preset: string | null;
+  base_url: string | null;
+  models: number | null;
+  latency_ms: number | null;
+  detail: string | null;
+}
+
+export interface DiscoveredBackend {
+  provider_id: string;
+  preset: string;
+  base_url: string;
+  added: boolean;
+}
+
+export interface InstalledModel {
+  name: string;
+  family: string | null;
+  parameter_size: string | null;
+  quantization: string | null;
+  size_bytes: number | null;
+  context_window: number | null;
+  modified_at_ms: number | null;
+}
+
+export interface ModelDetails {
+  name: string;
+  family: string | null;
+  parameter_size: string | null;
+  quantization: string | null;
+  format: string | null;
+  context_length: number | null;
+  capabilities: string[];
+  parameters: Record<string, unknown>;
+  template: string | null;
+  system: string | null;
+  modified_at_ms: number | null;
+  size_bytes: number | null;
+  has_license: boolean;
+}
+
+export interface RunningModel {
+  name: string;
+  size_bytes: number | null;
+  vram_bytes: number | null;
+  expires_at_ms: number | null;
+  context_length: number | null;
+  busy: boolean | null;
+}
+
+export type JobState = "running" | "succeeded" | "failed" | "cancelled";
+
+export interface JobSnapshot {
+  id: string;
+  kind: "pull" | "create";
+  provider_id: string;
+  model: string;
+  state: JobState;
+  status: string;
+  completed_bytes: number | null;
+  total_bytes: number | null;
+  bytes_per_second: number | null;
+  started_at: number;
+  finished_at: number | null;
+  error: ApiError | null;
+}
+
+export type ParamValue = number | string | boolean | string[];
+
+export interface ModelParams {
+  model_ref: string;
+  params: Record<string, ParamValue>;
+  supported_params: string[];
 }
 
 /** The one error shape every endpoint returns (docs/design/03-http-api.md). */

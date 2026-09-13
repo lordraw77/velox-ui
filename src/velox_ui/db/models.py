@@ -1,8 +1,9 @@
 """ORM models.
 
-Phase 1 covers identity, sessions, credentials storage and the conversation tree.
-Provider, RAG, MCP and usage tables arrive with the phases that use them; the schema
-document (docs/design/02-db-schema.md) describes the full target.
+Identity, sessions, credentials storage and the conversation tree arrived in phase 1;
+interface-configured providers and per-model parameters in phase 4. RAG, MCP and usage
+tables arrive with the phases that use them; the schema document
+(docs/design/02-db-schema.md) describes the full target.
 
 Conventions:
 
@@ -29,7 +30,9 @@ __all__ = [
     "ChatTag",
     "Folder",
     "Message",
+    "ModelParams",
     "OidcIdentity",
+    "Provider",
     "RefreshToken",
     "Secret",
     "Setting",
@@ -172,6 +175,53 @@ class Secret(Base):
     nonce: Mapped[bytes] = mapped_column()
     ciphertext: Mapped[bytes] = mapped_column()
     hint: Mapped[str] = shortstr(64)
+    updated_at: Mapped[Timestamp]
+
+
+class Provider(Base):
+    """An inference backend configured from the interface.
+
+    Backends named in configuration or found by autodiscovery are not stored here: they
+    are rebuilt from their source at every start, so editing ``velox.toml`` never leaves
+    a stale copy behind. Only what a person added through the interface is persisted.
+
+    The id is a readable slug rather than a ULID because it is the first half of every
+    ``model_ref`` ("lmstudio:qwen2.5-7b"), which appears in the interface, in exports
+    and in API calls from other clients.
+    """
+
+    __tablename__ = "provider"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = shortstr(200)
+    kind: Mapped[str] = shortstr(32)
+    preset: Mapped[str | None] = shortstr(64)
+    base_url: Mapped[str] = shortstr(1000)
+    # Points at a `secret` row; NULL means the backend is used without a credential.
+    auth_ref: Mapped[str | None] = shortstr(128)
+    extra: Mapped[Json | None]
+    enabled: Mapped[BoolInt] = mapped_column(default=True)
+    is_local: Mapped[BoolInt] = mapped_column(default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[Timestamp]
+    updated_at: Mapped[Timestamp]
+
+
+class ModelParams(Base):
+    """A user's saved sampling parameters for one model.
+
+    Keyed by ``model_ref`` rather than by a foreign key to a provider, because the
+    provider may come from configuration and have no row at all. A reference to a model
+    that no longer exists is harmless: nothing reads it until that model is used again.
+    """
+
+    __tablename__ = "model_params"
+
+    user_id: Mapped[UlidRef] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), primary_key=True
+    )
+    model_ref: Mapped[str] = mapped_column(String(255), primary_key=True)
+    params: Mapped[Json]
     updated_at: Mapped[Timestamp]
 
 

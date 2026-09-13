@@ -1,10 +1,14 @@
 <!--
   The application shell.
 
-  Routing is a single piece of state, not a router: the whole interface is one screen
-  with a selected conversation, and a router library would be among the largest things
-  in a 200 KB budget for no benefit. The conversation id lives in the URL hash so a
-  link is shareable and the back button works.
+  Routing is a single piece of state, not a router: the interface has a conversation
+  view and two management pages, and a router library would be among the largest
+  things in a 200 KB budget for no benefit. The location lives in the URL hash
+  (`#/chat/<id>`, `#/models`, `#/providers`) so a link is shareable and the back button
+  works.
+
+  The management pages and the parameter panel are imported on demand. A person
+  opening a conversation downloads none of them.
 -->
 <script lang="ts">
   import AuthGate from "$lib/components/AuthGate.svelte";
@@ -17,16 +21,32 @@
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
 
+  type View = "chat" | "models" | "providers";
+
+  let view = $state<View>("chat");
   let lastSent = $state<string | null>(null);
 
+  function route(): void {
+    const hash = location.hash;
+    if (hash.startsWith("#/models")) {
+      view = "models";
+    } else if (hash.startsWith("#/providers")) {
+      view = "providers";
+    } else {
+      view = "chat";
+      const id = hash.replace(/^#\/?chat\//, "");
+      if (id && id !== hash && id !== conversation.id) void conversation.open(id);
+    }
+  }
+
   $effect(() => {
-    void app.boot().then(() => {
-      const id = location.hash.replace(/^#\/?chat\//, "");
-      if (id && id !== location.hash) void conversation.open(id);
-    });
+    void app.boot().then(route);
+    window.addEventListener("hashchange", route);
+    return () => window.removeEventListener("hashchange", route);
   });
 
   function select(id: string | null): void {
+    view = "chat";
     if (id === null) {
       conversation.reset();
       history.replaceState(null, "", "#");
@@ -34,6 +54,10 @@
     }
     history.replaceState(null, "", `#/chat/${id}`);
     void conversation.open(id);
+  }
+
+  function navigate(target: "models" | "providers"): void {
+    location.hash = `#/${target}`;
   }
 
   function send(text: string): void {
@@ -54,7 +78,7 @@
   <AuthGate />
 {:else}
   <div class="shell">
-    <Sidebar onselect={select} />
+    <Sidebar onselect={select} onnavigate={navigate} current={view} />
 
     <main>
       <Header />
@@ -63,33 +87,54 @@
         <ErrorBanner error={app.error} ondismiss={() => app.dismissError()} />
       {/if}
 
-      {#if conversation.loading}
-        <div class="boot"><span class="spinner"></span></div>
-      {:else if conversation.isEmpty}
-        <div class="welcome">
-          <p>{app.t("chat.empty")}</p>
-          <p class="hint">{app.t("chat.emptyHint")}</p>
-        </div>
+      {#if view === "models"}
+        {#await import("$lib/components/ModelsPanel.svelte") then { default: ModelsPanel }}
+          <ModelsPanel />
+        {/await}
+      {:else if view === "providers"}
+        {#await import("$lib/components/ProvidersPanel.svelte") then { default: ProvidersPanel }}
+          <ProvidersPanel />
+        {/await}
       {:else}
-        <MessageList messages={conversation.messages} streaming={conversation.streaming} />
-      {/if}
+        {#if app.paramsOpen && app.model}
+          {#await import("$lib/components/ParamsPanel.svelte") then { default: ParamsPanel }}
+            <ParamsPanel />
+          {/await}
+        {/if}
 
-      <div class="footer">
-        {#if conversation.streamError}
-          <ErrorBanner
-            error={conversation.streamError}
-            ondismiss={() => (conversation.streamError = null)}
-            onretry={retry}
+        {#if conversation.loading}
+          <div class="boot"><span class="spinner"></span></div>
+        {:else if conversation.isEmpty}
+          <div class="welcome">
+            <p>{app.t("chat.empty")}</p>
+            <p class="hint">{app.t("chat.emptyHint")}</p>
+          </div>
+        {:else}
+          <MessageList
+            messages={conversation.messages}
+            streaming={conversation.streaming}
+            loadingOlder={conversation.loadingOlder}
+            onreachtop={() => conversation.loadOlder()}
           />
         {/if}
-        <div class="statusline"><StatusLine phase={conversation.phase} /></div>
-        <Composer
-          disabled={!canSend}
-          streaming={conversation.streaming}
-          onsend={send}
-          onstop={() => conversation.stop()}
-        />
-      </div>
+
+        <div class="footer">
+          {#if conversation.streamError}
+            <ErrorBanner
+              error={conversation.streamError}
+              ondismiss={() => (conversation.streamError = null)}
+              onretry={retry}
+            />
+          {/if}
+          <div class="statusline"><StatusLine phase={conversation.phase} /></div>
+          <Composer
+            disabled={!canSend}
+            streaming={conversation.streaming}
+            onsend={send}
+            onstop={() => conversation.stop()}
+          />
+        </div>
+      {/if}
     </main>
   </div>
 {/if}

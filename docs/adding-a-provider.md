@@ -20,8 +20,16 @@ base_url = "http://localhost:1234/v1"
 auth = "none"          # local backends must work without a key (ADR-0008)
 local = true
 discovery_ports = [1234]
-quirks = { no_usage_chunk = true }
+sampling = ["top_k", "min_p", "repeat_penalty"]   # accepted beyond the OpenAI set
+docs_url = "https://lmstudio.ai/docs/app/api/endpoints/openai"
 ```
+
+A backend that spells a parameter differently renames it —
+`rename = { repeat_penalty = "repetition_penalty" }` — and only parameters in the OpenAI
+set or in `sampling` are ever sent, so a server that rejects unknown fields never sees
+one it does not know. The preset is immediately configurable from the environment
+(`VELOX_PROVIDER_LMSTUDIO_HOSTS`), selectable in the interface, and, with
+`discovery_ports`, found at first start.
 
 **2. It speaks the OpenAI protocol with a deviation nobody has modelled yet.** Add a
 quirk flag rather than a new adapter. A quirk is data; a second adapter is a second
@@ -54,7 +62,7 @@ class MyProvider:
     async def health(self) -> Health: ...
 ```
 
-Then add one branch to `ProviderRegistry.get`, importing your module inside it. The
+Then add one branch to `ProviderRegistry._build`, importing your module inside it. The
 import must stay inside the function: a module-level import of every adapter would put
 httpx and each backend's dependencies on the startup path of instances that never use
 them, which is measured and gated (`bench/cases/cold_start.py`).
@@ -116,3 +124,21 @@ extraction, each error your backend can produce, and an unreachable host.
 - [ ] Fake replaying the real wire format, under `tests/fakes/`
 - [ ] Contract tests under `tests/contract/`
 - [ ] Row added to the provider table in `README.md`
+
+## Optional capabilities
+
+Model management is not part of the core contract. An adapter that can report what is
+installed and loaded implements `ModelInspector` (`show`, `running`); one that can also
+change it implements `LocalModelAdmin` (`pull`, `create`, `delete`, `copy`, `unload`).
+Both are structural protocols checked with `isinstance`, and `GET /api/models` turns them
+into a `features` list, so the Models page enables controls for a new backend without
+anyone touching the interface.
+
+Every adapter also declares `supported_params`: the sampling parameters it will actually
+send. The Parameters panel shows exactly these, and saving any other is rejected — a
+setting that silently does nothing is worse than one that is not offered.
+
+`pull` and `create` return async iterators of `PullProgress`. They run as server-side
+jobs (ADR-0017), so an adapter only has to report progress honestly, including failures
+that arrive inside a successful response: Ollama answers a pull of a nonexistent model
+with HTTP 200 and an `error` line, and a contract test holds the adapter to that.

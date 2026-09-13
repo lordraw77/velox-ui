@@ -1,0 +1,153 @@
+# Provider presets (ADR-0009).
+#
+# A preset is data, not code: everything the parametrized OpenAI-compatible adapter
+# needs to talk to one kind of backend. Adding a backend that speaks the OpenAI
+# protocol is an entry here and nothing else.
+#
+# Fields
+#   kind             adapter: "ollama", "llamacpp" or "openai_compat"
+#   label            name shown in the interface
+#   base_url         default address; for openai_compat it includes the /v1 prefix
+#   auth             "none" (never sends a key unless one is given), "optional"
+#                    (the backend can be started with one), "required"
+#   local            true for software that runs on your own hardware: no key is
+#                    expected, cost is zero, it sorts first. Omit to decide from the
+#                    address (loopback and private networks count as local).
+#   discovery_ports  loopback ports probed at first start when nothing is configured.
+#                    Only the four conventional ports are listed; several backends
+#                    share 5000 and 8080, and probing them would guess, not detect.
+#   probe_path       path, relative to base_url, that identifies this backend
+#   sampling         non-standard sampling parameters the backend accepts, beyond the
+#                    OpenAI set (temperature, top_p, presence_penalty,
+#                    frequency_penalty, seed, stop, max_tokens), named as velox-ui
+#                    names them
+#   rename           velox-ui parameter name -> the name this backend expects
+#   docs_url         where the backend documents its API
+#
+# [<key>.quirks]
+#   stream_usage     send stream_options.include_usage so token counts arrive in the
+#                    final chunk; turn off for servers that reject the field
+#   max_tokens_field the request field that caps output length
+#
+# The sampling lists below come from each project's own API documentation. They are
+# exercised by the contract suite against a fake server, not against every real
+# backend; a backend that rejects a listed parameter needs its list corrected here.
+
+[ollama]
+kind = "ollama"
+label = "Ollama"
+base_url = "http://localhost:11434"
+auth = "none"
+local = true
+discovery_ports = [11434]
+probe_path = "/api/tags"
+docs_url = "https://github.com/ollama/ollama/blob/main/docs/api.md"
+
+[llamacpp]
+kind = "llamacpp"
+label = "llama.cpp (llama-server)"
+base_url = "http://localhost:8080"
+auth = "optional"
+local = true
+discovery_ports = [8080]
+probe_path = "/props"
+docs_url = "https://github.com/ggml-org/llama.cpp/tree/master/tools/server"
+
+[lmstudio]
+kind = "openai_compat"
+label = "LM Studio"
+base_url = "http://localhost:1234/v1"
+auth = "none"
+local = true
+discovery_ports = [1234]
+sampling = ["top_k", "min_p", "repeat_penalty"]
+docs_url = "https://lmstudio.ai/docs/app/api/endpoints/openai"
+
+[vllm]
+kind = "openai_compat"
+label = "vLLM"
+base_url = "http://localhost:8000/v1"
+auth = "optional"
+local = true
+discovery_ports = [8000]
+sampling = ["top_k", "min_p", "repeat_penalty"]
+rename = { repeat_penalty = "repetition_penalty" }
+docs_url = "https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html"
+
+[tgi]
+kind = "openai_compat"
+label = "Text Generation Inference"
+base_url = "http://localhost:8080/v1"
+auth = "optional"
+local = true
+docs_url = "https://huggingface.co/docs/text-generation-inference/messages_api"
+
+[tabbyapi]
+kind = "openai_compat"
+label = "TabbyAPI (ExLlamaV2)"
+base_url = "http://localhost:5000/v1"
+auth = "required"
+local = true
+sampling = ["top_k", "min_p", "typical_p", "tfs_z", "repeat_penalty", "mirostat", "mirostat_tau", "mirostat_eta"]
+rename = { typical_p = "typical", tfs_z = "tfs", repeat_penalty = "repetition_penalty", mirostat = "mirostat_mode" }
+docs_url = "https://github.com/theroyallab/tabbyAPI/wiki"
+
+[koboldcpp]
+kind = "openai_compat"
+label = "KoboldCpp"
+base_url = "http://localhost:5001/v1"
+auth = "optional"
+local = true
+docs_url = "https://github.com/LostRuins/koboldcpp/wiki"
+
+[localai]
+kind = "openai_compat"
+label = "LocalAI"
+base_url = "http://localhost:8080/v1"
+auth = "optional"
+local = true
+sampling = ["top_k"]
+docs_url = "https://localai.io/features/text-generation/"
+
+[jan]
+kind = "openai_compat"
+label = "Jan"
+base_url = "http://localhost:1337/v1"
+auth = "optional"
+local = true
+docs_url = "https://jan.ai/docs/api-server"
+
+[llamafile]
+kind = "openai_compat"
+label = "llamafile"
+base_url = "http://localhost:8080/v1"
+auth = "none"
+local = true
+sampling = ["top_k", "min_p", "typical_p", "repeat_penalty", "mirostat", "mirostat_tau", "mirostat_eta"]
+docs_url = "https://github.com/Mozilla-Ocho/llamafile"
+
+[mlx_lm]
+kind = "openai_compat"
+label = "MLX LM (mlx_lm.server)"
+base_url = "http://localhost:8080/v1"
+auth = "none"
+local = true
+sampling = ["top_k", "min_p", "repeat_penalty"]
+rename = { repeat_penalty = "repetition_penalty" }
+docs_url = "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md"
+
+[textgen_webui]
+kind = "openai_compat"
+label = "Text Generation WebUI"
+base_url = "http://localhost:5000/v1"
+auth = "optional"
+local = true
+sampling = ["top_k", "min_p", "typical_p", "tfs_z", "repeat_penalty", "mirostat", "mirostat_tau", "mirostat_eta"]
+rename = { tfs_z = "tfs", repeat_penalty = "repetition_penalty", mirostat = "mirostat_mode" }
+docs_url = "https://github.com/oobabooga/text-generation-webui/wiki/12-%E2%80%90-OpenAI-API"
+
+[custom]
+kind = "openai_compat"
+label = "Custom OpenAI-compatible"
+base_url = ""
+auth = "optional"

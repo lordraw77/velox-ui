@@ -54,9 +54,12 @@ Each phase ends working, tested and benchmarked before the next begins.
 2. ~~Provider abstraction + full Ollama and llama.cpp adapters, streaming, persisted
    chat. **TTFT measured.**~~ **Done** — 10.2 ms p95 overhead, verified against fake
    backends and a real Ollama host.
-3. Minimal but real frontend: chat list, streaming, virtual scroll, markdown, tok/s.
-4. Local model management in the UI (pull with progress, ps/unload, advanced params)
-   and the parametrized OpenAI-compatible adapter with presets.
+3. ~~Minimal but real frontend: chat list, streaming, virtual scroll, markdown, tok/s.~~
+   **Done** — verified in a real browser against a real Ollama host.
+4. ~~Local model management in the UI (pull with progress, ps/unload, advanced params)
+   and the parametrized OpenAI-compatible adapter with presets.~~ **Done** — downloads
+   run as server-side jobs (ADR-0017), providers can be added from the interface with
+   encrypted credentials, and conversations open one page at a time.
 5. Cloud providers: Groq, OpenRouter, Mistral, NVIDIA, Cloudflare, Gemini, Anthropic,
    OpenAI — each with contract tests.
 6. Organization, search, custom models, full multi-user.

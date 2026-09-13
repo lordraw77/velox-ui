@@ -22,11 +22,14 @@ __all__ = [
     "ChatMessage",
     "ChatRequest",
     "ContentPart",
+    "CreateModelSpec",
     "Done",
     "Health",
     "HealthState",
     "LocalModelAdmin",
+    "ModelDetails",
     "ModelInfo",
+    "ModelInspector",
     "Provider",
     "PullProgress",
     "ReasoningDelta",
@@ -124,6 +127,8 @@ class ModelInfo(msgspec.Struct, frozen=True):
     capabilities: Capabilities
     family: str | None = None
     loaded: bool | None = None
+    parameter_size: str | None = None
+    modified_at_ms: int | None = None
 
 
 class Health(msgspec.Struct, frozen=True):
@@ -280,12 +285,85 @@ class PullProgress(msgspec.Struct, frozen=True):
 
 
 class RunningModel(msgspec.Struct, frozen=True):
-    """A model currently loaded in a local backend's memory."""
+    """A model currently loaded in a local backend's memory.
+
+    Attributes:
+        name: The model as the backend names it.
+        size_bytes: Memory the loaded model occupies in total.
+        vram_bytes: The part of it on the GPU. ``0`` means the model runs on the CPU,
+            which is the single most useful fact about a slow reply.
+        expires_at_ms: When the backend will unload it if unused, per its keep-alive.
+        context_length: The context size it was loaded with, which can be smaller
+            than the model's maximum.
+        busy: Whether it is serving a request right now, when the backend says.
+    """
 
     name: str
     size_bytes: int | None = None
     vram_bytes: int | None = None
     expires_at_ms: int | None = None
+    context_length: int | None = None
+    busy: bool | None = None
+
+
+class ModelDetails(msgspec.Struct, frozen=True):
+    """Everything a backend reports about one installed model.
+
+    Attributes:
+        name: The model as the backend names it.
+        family: Architecture family.
+        parameter_size: Human-readable parameter count, e.g. ``"8.2B"``.
+        quantization: Quantisation level, e.g. ``"Q4_K_M"``.
+        format: Weight format, e.g. ``"gguf"``.
+        context_length: The model's maximum context window.
+        capabilities: Capability names exactly as the backend reports them.
+        parameters: Sampling defaults baked into the model. Repeated keys, such as
+            several ``stop`` sequences, become lists.
+        template: The prompt template.
+        system: A system prompt baked into the model.
+        modified_at_ms: When the model was last changed on disk.
+        size_bytes: Size on disk.
+        has_license: Whether a licence text is attached. The text itself can be tens
+            of kilobytes and is not included.
+    """
+
+    name: str
+    family: str | None = None
+    parameter_size: str | None = None
+    quantization: str | None = None
+    format: str | None = None
+    context_length: int | None = None
+    capabilities: tuple[str, ...] = ()
+    parameters: dict[str, Any] = msgspec.field(default_factory=dict)
+    template: str | None = None
+    system: str | None = None
+    modified_at_ms: int | None = None
+    size_bytes: int | None = None
+    has_license: bool = False
+
+
+class CreateModelSpec(msgspec.Struct, frozen=True):
+    """A new model derived from an installed one.
+
+    Attributes:
+        name: Name of the model to create.
+        from_model: Installed model to build on.
+        system: System prompt to bake in.
+        template: Prompt template to replace the base model's.
+        parameters: Sampling defaults to bake in.
+        messages: A seed conversation.
+        license: Licence text.
+        quantize: Re-quantise to this level while creating.
+    """
+
+    name: str
+    from_model: str
+    system: str | None = None
+    template: str | None = None
+    parameters: dict[str, Any] = msgspec.field(default_factory=dict)
+    messages: tuple[dict[str, str], ...] = ()
+    license: str | None = None
+    quantize: str | None = None
 
 
 @runtime_checkable
@@ -294,6 +372,8 @@ class Provider(Protocol):
 
     provider_id: str
     is_local: bool
+    supported_params: frozenset[str]
+    """Sampling parameters this adapter sends. The interface shows only these."""
 
     async def list_models(self, *, refresh: bool = False) -> list[ModelInfo]:
         """Discover models. Cached by the caller; ``refresh`` bypasses that cache."""
@@ -331,15 +411,37 @@ class Provider(Protocol):
 
 
 @runtime_checkable
-class LocalModelAdmin(Protocol):
-    """Optional mixin implemented by adapters that manage local model storage.
+class ModelInspector(Protocol):
+    """Optional capability: report what is installed and what is loaded.
 
-    Routes query this with ``isinstance`` rather than by provider name, so a new local
-    backend gains model management by implementing it and nothing else changes.
+    Routes query this with ``isinstance`` rather than by provider name, so a backend
+    gains the feature by implementing the methods and nothing else changes.
+    """
+
+    async def show(self, name: str) -> ModelDetails:
+        """Describe one installed model."""
+        ...
+
+    async def running(self) -> list[RunningModel]:
+        """List the models currently held in memory."""
+        ...
+
+
+@runtime_checkable
+class LocalModelAdmin(Protocol):
+    """Optional capability: manage a backend's model storage and memory.
+
+    Separate from :class:`ModelInspector` because backends differ exactly here:
+    ``llama-server`` can say what it has loaded but cannot download or delete a model,
+    while Ollama can do both.
     """
 
     def pull(self, name: str) -> AsyncIterator[PullProgress]:
         """Download a model, yielding progress as it goes."""
+        ...
+
+    def create(self, spec: CreateModelSpec) -> AsyncIterator[PullProgress]:
+        """Create a model from an installed one, yielding progress."""
         ...
 
     async def delete(self, name: str) -> None:
@@ -348,10 +450,6 @@ class LocalModelAdmin(Protocol):
 
     async def copy(self, src: str, dst: str) -> None:
         """Copy a model under a new name."""
-        ...
-
-    async def running(self) -> list[RunningModel]:
-        """List the models currently held in memory."""
         ...
 
     async def unload(self, name: str) -> None:

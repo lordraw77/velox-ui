@@ -9,6 +9,7 @@ import pytest
 
 from tests.fakes.llamacpp import create_app as create_llamacpp
 from tests.fakes.ollama import create_app as create_ollama
+from tests.fakes.openai_compat import create_app as create_openai
 from tests.fakes.server import FakeServer, run_fake
 
 
@@ -23,6 +24,20 @@ def ollama_server() -> Iterator[FakeServer]:
 def llamacpp_server() -> Iterator[FakeServer]:
     """A fake llama-server on a real localhost port, shared by the session."""
     with run_fake(create_llamacpp()) as server:
+        yield server
+
+
+@pytest.fixture(scope="session")
+def openai_server() -> Iterator[FakeServer]:
+    """A fake OpenAI-compatible server that needs no credential."""
+    with run_fake(create_openai()) as server:
+        yield server
+
+
+@pytest.fixture(scope="session")
+def openai_keyed_server() -> Iterator[FakeServer]:
+    """A fake OpenAI-compatible server that requires ``Bearer sk-test-key-1234``."""
+    with run_fake(create_openai(api_key="sk-test-key-1234")) as server:
         yield server
 
 

@@ -67,6 +67,19 @@
       {/each}
     </div>
 
+    {#if app.model}
+      <button
+        class="btn btn-ghost"
+        class:open={app.paramsOpen}
+        onclick={() => (app.paramsOpen = !app.paramsOpen)}
+        aria-pressed={app.paramsOpen}
+        type="button"
+        data-testid="params-toggle"
+      >
+        {app.t("params.title")}
+      </button>
+    {/if}
+
     <select
       value={app.locale}
       onchange={(event) => app.setLocale((event.currentTarget as HTMLSelectElement).value as Locale)}
@@ -112,6 +125,10 @@
     flex-wrap: wrap;
     gap: 0.4rem;
     align-items: center;
+  }
+
+  .open {
+    background: var(--bg-active);
   }
 
   .health {

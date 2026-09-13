@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 import msgspec
-from sqlalchemy import CursorResult, Select, select, tuple_, update
+from sqlalchemy import CursorResult, Select, literal, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from velox_ui.clock import now_ms
@@ -372,6 +372,141 @@ class ChatRepository:
                 )
             )
         return path
+
+    async def load_path_page(
+        self, chat_id: str, *, start_id: str | None, limit: int
+    ) -> tuple[list[MessageNode], str | None]:
+        """Load one page of the active branch, walking from its tip toward the root.
+
+        Opening a conversation needs only what fits on screen plus a margin, and the
+        client virtualises, so the page is bounded by the viewport rather than by the
+        length of the conversation. This is what keeps opening a five-thousand-message
+        conversation proportional to the page, not to the conversation.
+
+        The walk is a recursive query over primary-key lookups: each step reads one
+        row by ``id``, so a page of a hundred costs a hundred index probes no matter
+        how many messages — or how many abandoned branches — the conversation holds.
+        :meth:`load_active_path` scans every node instead, which is right for building
+        a provider context and wrong for rendering a screen.
+
+        Args:
+            chat_id: Conversation to read.
+            start_id: The newest message of the page, inclusive: the branch tip for
+                the first page, the cursor for every later one. ``None`` means the
+                conversation's active leaf.
+            limit: Page size, already clamped by the route.
+
+        Returns:
+            The page in reading order (oldest first), and the id to start the next,
+            older, page from — ``None`` when the page reaches the root.
+        """
+        if start_id is None:
+            start_id = await self._tip_of(chat_id)
+            if start_id is None:
+                return [], None
+
+        anchor = (
+            select(Message.id, Message.parent_id, literal(0).label("step"))
+            .where(Message.id == start_id, Message.chat_id == chat_id)
+            .cte("chain", recursive=True)
+        )
+        chain = anchor.union_all(
+            select(Message.id, Message.parent_id, (anchor.c.step + 1).label("step"))
+            .join(anchor, Message.id == anchor.c.parent_id)
+            # Both bounds matter: the step cap ends the walk after one extra row (which
+            # is how the next cursor is found without a second query), and the chat
+            # condition keeps a corrupt parent pointer from leaving the conversation.
+            .where(anchor.c.step < limit, Message.chat_id == chat_id)
+        )
+        steps = (
+            await self._session.execute(select(chain.c.id, chain.c.step).order_by(chain.c.step))
+        ).all()
+        if not steps:
+            return [], None
+
+        page_ids = [row.id for row in steps[:limit]]
+        next_cursor = str(steps[limit].id) if len(steps) > limit else None
+
+        rows = (
+            await self._session.execute(
+                select(*_MESSAGE_COLUMNS).where(Message.id.in_(page_ids))
+            )
+        ).all()
+        by_id = {row.id: row for row in rows}
+        siblings = await self._siblings_of(chat_id, {row.parent_id for row in rows})
+
+        page: list[MessageNode] = []
+        for message_id in reversed(page_ids):
+            row = by_id[message_id]
+            group = siblings.get(row.parent_id, [message_id])
+            page.append(
+                MessageNode(
+                    id=row.id,
+                    parent_id=row.parent_id,
+                    role=row.role,
+                    content=row.content,
+                    reasoning=row.reasoning,
+                    status=row.status,
+                    model_ref=row.model_ref,
+                    depth=row.depth,
+                    tokens_in=row.tokens_in,
+                    tokens_out=row.tokens_out,
+                    cost_micros=row.cost_micros,
+                    timings=row.timings,
+                    error=row.error,
+                    created_at=row.created_at,
+                    sibling_index=group.index(message_id) if message_id in group else 0,
+                    sibling_count=max(1, len(group)),
+                )
+            )
+        return page, next_cursor
+
+    async def _tip_of(self, chat_id: str) -> str | None:
+        """Return the active leaf, or the deepest node of a never-branched chat."""
+        leaf = (
+            await self._session.execute(
+                select(Chat.active_leaf_id).where(Chat.id == chat_id).limit(1)
+            )
+        ).scalar_one_or_none()
+        if leaf is not None:
+            return str(leaf)
+        deepest = (
+            await self._session.execute(
+                select(Message.id)
+                .where(Message.chat_id == chat_id)
+                .order_by(Message.depth.desc(), Message.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return str(deepest) if deepest is not None else None
+
+    async def _siblings_of(
+        self, chat_id: str, parent_ids: set[str | None]
+    ) -> dict[str | None, list[str]]:
+        """Return the child ids of each parent, in creation order.
+
+        Only ids are read, through ``ix_message_parent``; the bodies of branches that
+        are not displayed never leave the database.
+        """
+        conditions = []
+        concrete = [parent for parent in parent_ids if parent is not None]
+        if concrete:
+            conditions.append(Message.parent_id.in_(concrete))
+        if None in parent_ids:
+            conditions.append(Message.parent_id.is_(None))
+        if not conditions:
+            return {}
+        rows = (
+            await self._session.execute(
+                select(Message.parent_id, Message.id)
+                .where(Message.chat_id == chat_id, or_(*conditions))
+                .order_by(Message.id)
+            )
+        ).all()
+        grouped: dict[str | None, list[str]] = {}
+        for row in rows:
+            grouped.setdefault(row.parent_id, []).append(row.id)
+        return grouped
 
     async def soft_delete(self, chat_id: str, *, user_id: str) -> bool:
         """Mark a conversation deleted, keeping it recoverable until it is purged."""

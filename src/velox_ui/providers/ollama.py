@@ -20,8 +20,10 @@ Two things are specific to Ollama and worth calling out:
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import AsyncIterator, Sequence
+from datetime import datetime
 from typing import Any, cast
 
 import httpx
@@ -30,9 +32,11 @@ import msgspec
 from velox_ui.providers.base import (
     Capabilities,
     ChatRequest,
+    CreateModelSpec,
     Done,
     Health,
     HealthState,
+    ModelDetails,
     ModelInfo,
     PullProgress,
     ReasoningDelta,
@@ -54,11 +58,19 @@ from velox_ui.providers.errors import (
     UnsupportedCapability,
     UpstreamError,
 )
+from velox_ui.providers.modelfile import coerce_parameter
 
 __all__ = ["OllamaProvider"]
 
 _NS_PER_MS = 1_000_000.0
 _RESIDENCY_TTL_S = 5.0
+
+# Model downloads and creation report progress continuously, but resolving a manifest
+# or re-quantising can be silent for a long time. The read budget is for silence
+# between progress lines, not for the whole operation.
+_TRANSFER_TIMEOUT = httpx.Timeout(connect=5.0, read=900.0, write=30.0, pool=5.0)
+
+_FRACTION = re.compile(r"(\.\d{6})\d+")
 
 
 class OllamaProvider:
@@ -72,6 +84,31 @@ class OllamaProvider:
     """
 
     is_local = True
+    supported_params = frozenset(
+        {
+            "temperature",
+            "top_p",
+            "top_k",
+            "min_p",
+            "typical_p",
+            "tfs_z",
+            "repeat_penalty",
+            "presence_penalty",
+            "frequency_penalty",
+            "mirostat",
+            "mirostat_tau",
+            "mirostat_eta",
+            "penalize_nl",
+            "seed",
+            "stop",
+            "max_tokens",
+            "num_ctx",
+            "num_gpu",
+            "num_thread",
+            "num_batch",
+            "keep_alive",
+        }
+    )
 
     def __init__(
         self,
@@ -123,7 +160,10 @@ class OllamaProvider:
                     capabilities=Capabilities(
                         quantization=details.get("quantization_level"),
                         size_bytes=entry.get("size"),
+                        context_window=details.get("context_length"),
                     ),
+                    parameter_size=details.get("parameter_size"),
+                    modified_at_ms=_epoch_ms(entry.get("modified_at")),
                 )
             )
         return models
@@ -255,36 +295,110 @@ class OllamaProvider:
         )
 
     def pull(self, name: str) -> AsyncIterator[PullProgress]:
-        """Pull a model, streaming progress (``/api/pull``)."""
-        return self._pull(name)
+        """Pull a model, streaming progress (``/api/pull``).
 
-    async def _pull(self, name: str) -> AsyncIterator[PullProgress]:
-        url = f"{self.base_url}/api/pull"
-        async with self._client.stream("POST", url, json={"model": name}) as response:
-            if response.status_code >= 400:
-                await self._raise_for_status(response, model=name)
-            async for line in response.aiter_lines():
-                if not line.strip():
-                    continue
-                chunk = cast(dict[str, Any], msgspec.json.decode(line))
-                yield PullProgress(
-                    status=chunk.get("status", ""),
-                    completed_bytes=chunk.get("completed"),
-                    total_bytes=chunk.get("total"),
-                    digest=chunk.get("digest"),
-                )
+        Ollama resumes an interrupted pull where it stopped, and concurrent pulls of the
+        same model share one download, so cancelling this iterator loses nothing.
+        """
+        return self._transfer("/api/pull", {"model": name, "stream": True}, model=name)
+
+    def create(self, spec: CreateModelSpec) -> AsyncIterator[PullProgress]:
+        """Create a model from an installed one (``/api/create``), streaming progress."""
+        body: dict[str, Any] = {"model": spec.name, "from": spec.from_model, "stream": True}
+        if spec.system is not None:
+            body["system"] = spec.system
+        if spec.template is not None:
+            body["template"] = spec.template
+        if spec.parameters:
+            body["parameters"] = spec.parameters
+        if spec.messages:
+            body["messages"] = list(spec.messages)
+        if spec.license is not None:
+            body["license"] = spec.license
+        if spec.quantize is not None:
+            body["quantize"] = spec.quantize
+        return self._transfer("/api/create", body, model=spec.name)
+
+    async def _transfer(
+        self, path: str, body: dict[str, Any], *, model: str
+    ) -> AsyncIterator[PullProgress]:
+        """Run a streamed model operation, translating each NDJSON progress line.
+
+        Ollama reports a failure *inside* a 200 response — a pull of a model that does
+        not exist answers ``{"status": "pulling manifest"}`` and then ``{"error": ...}``
+        — so every line is checked, not only the status code.
+        """
+        try:
+            async with self._client.stream(
+                "POST", f"{self.base_url}{path}", json=body, timeout=_TRANSFER_TIMEOUT
+            ) as response:
+                if response.status_code >= 400:
+                    await self._raise_for_status(response, model=model)
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    chunk = cast(dict[str, Any], msgspec.json.decode(line))
+                    if error := chunk.get("error"):
+                        raise self._map_message(str(error), model=model)
+                    yield PullProgress(
+                        status=str(chunk.get("status", "")),
+                        completed_bytes=chunk.get("completed"),
+                        total_bytes=chunk.get("total"),
+                        digest=chunk.get("digest"),
+                    )
+        except httpx.ConnectError as exc:
+            raise BackendOffline(
+                f"Cannot reach the Ollama host at {self.base_url}: {exc}",
+                provider_id=self.provider_id,
+                model=model,
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise BackendTimeout(
+                f"The Ollama host at {self.base_url} stopped reporting progress: {exc}",
+                provider_id=self.provider_id,
+                model=model,
+            ) from exc
+        finally:
+            self._forget(model)
 
     async def delete(self, name: str) -> None:
         """Delete a local model (``/api/delete``)."""
-        response = await self._client.request(
-            "DELETE", f"{self.base_url}/api/delete", json={"model": name}
-        )
-        if response.status_code >= 400:
-            await self._raise_for_status(response, model=name)
+        await self._send("DELETE", "/api/delete", {"model": name}, model=name)
+        self._forget(name)
 
     async def copy(self, src: str, dst: str) -> None:
         """Copy a local model under a new name (``/api/copy``)."""
-        await self._post_json("/api/copy", {"source": src, "destination": dst})
+        await self._send("POST", "/api/copy", {"source": src, "destination": dst}, model=src)
+        self._forget(dst)
+
+    async def show(self, name: str) -> ModelDetails:
+        """Describe an installed model (``/api/show``)."""
+        response = await self._send("POST", "/api/show", {"model": name}, model=name)
+        payload = response.json()
+        details = payload.get("details") or {}
+        model_info = payload.get("model_info") or {}
+        context_length = next(
+            (
+                int(value)
+                for key, value in model_info.items()
+                if key.endswith(".context_length")
+            ),
+            None,
+        )
+        return ModelDetails(
+            name=name,
+            family=details.get("family"),
+            parameter_size=details.get("parameter_size"),
+            quantization=details.get("quantization_level"),
+            format=details.get("format"),
+            context_length=context_length,
+            capabilities=tuple(payload.get("capabilities") or ()),
+            parameters=parse_parameters(payload.get("parameters") or ""),
+            template=payload.get("template") or None,
+            system=payload.get("system") or None,
+            modified_at_ms=_epoch_ms(payload.get("modified_at")),
+            has_license=bool(payload.get("license")),
+        )
 
     async def running(self) -> list[RunningModel]:
         """List models currently loaded in memory (``/api/ps``)."""
@@ -295,17 +409,60 @@ class OllamaProvider:
                 name=entry["name"],
                 size_bytes=entry.get("size"),
                 vram_bytes=entry.get("size_vram"),
-                expires_at_ms=None,
+                expires_at_ms=_epoch_ms(entry.get("expires_at")),
+                context_length=entry.get("context_length"),
             )
             for entry in payload.get("models", [])
         ]
 
     async def unload(self, name: str) -> None:
-        """Unload a model from memory by requesting ``keep_alive: 0``."""
+        """Unload a model from memory: ``/api/generate`` with ``keep_alive: 0``."""
         self._residency = None  # the UI just changed what is resident
-        await self._post_json(
-            "/api/chat", {"model": name, "messages": [], "keep_alive": 0}, timeout_s=10.0
+        await self._send(
+            "POST",
+            "/api/generate",
+            {"model": name, "keep_alive": 0},
+            model=name,
+            timeout_s=30.0,
         )
+
+    def _forget(self, name: str) -> None:
+        """Drop what this adapter cached about a model that was just changed."""
+        self._capability_cache.pop(name, None)
+        self._residency = None
+
+    async def _send(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        *,
+        model: str | None = None,
+        timeout_s: float = 30.0,
+    ) -> httpx.Response:
+        """Issue a non-streaming JSON request with typed failures."""
+        try:
+            response = await self._client.request(
+                method,
+                f"{self.base_url}{path}",
+                json=body,
+                timeout=httpx.Timeout(timeout_s, connect=self.timeouts.connect_s),
+            )
+        except httpx.TimeoutException as exc:
+            raise BackendTimeout(
+                f"The Ollama host at {self.base_url} did not respond in time: {exc}",
+                provider_id=self.provider_id,
+                model=model,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise BackendOffline(
+                f"Cannot reach the Ollama host at {self.base_url}: {exc}",
+                provider_id=self.provider_id,
+                model=model,
+            ) from exc
+        if response.status_code >= 400:
+            await self._raise_for_status(response, model=model)
+        return response
 
     async def _is_loaded(self, model: str) -> bool:
         """Whether ``model`` is currently resident, per ``/api/ps``.
@@ -443,7 +600,9 @@ class OllamaProvider:
         substrings the server actually emits.
         """
         lowered = message.lower()
-        if "not found" in lowered and "try pulling" in lowered:
+        # "model 'x' not found" (delete, copy, show), "... not found, try pulling it
+        # first" (chat), and "file does not exist" (pulling a name the registry lacks).
+        if "not found" in lowered or "file does not exist" in lowered:
             return ModelNotFound(message, provider_id=self.provider_id, model=model)
         if "memory" in lowered or "requires more system" in lowered:
             return OutOfMemory(message, provider_id=self.provider_id, model=model)
@@ -453,6 +612,42 @@ class OllamaProvider:
             model=model,
             status_code=status_code or 502,
         )
+
+
+def parse_parameters(text: str) -> dict[str, Any]:
+    """Parse the ``parameters`` block of ``/api/show``.
+
+    Ollama returns it as Modelfile text — one ``key value`` pair per line, padded with
+    spaces, strings quoted, and keys such as ``stop`` repeated. Repeated keys become
+    lists; numbers become numbers. ``stop`` is always a list, as it is everywhere else in
+    Ollama's API: a model with a single stop sequence would otherwise come back as a
+    string, which is what a real 0.34 host returned for a model created with one.
+    """
+    parsed: dict[str, Any] = {}
+    for line in text.splitlines():
+        key, _, raw = line.strip().partition(" ")
+        if not key or not raw.strip():
+            continue
+        value = coerce_parameter(raw.strip())
+        if key in parsed:
+            existing = parsed[key]
+            parsed[key] = (
+                [*existing, value] if isinstance(existing, list) else [existing, value]
+            )
+        else:
+            parsed[key] = [value] if key == "stop" else value
+    return parsed
+
+
+def _epoch_ms(value: object) -> int | None:
+    """Convert Ollama's RFC 3339 timestamps, which carry nanoseconds, to epoch ms."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(_FRACTION.sub(r"\1", value.replace("Z", "+00:00")))
+    except ValueError:
+        return None
+    return int(moment.timestamp() * 1_000)
 
 
 def _params_to_options(request: ChatRequest) -> dict[str, Any]:

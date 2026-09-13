@@ -22,6 +22,9 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; importing httpx here would
     # undo the whole point of the lazy client below.
     import httpx
 
+    from velox_ui.services.model_jobs import ModelJobs
+    from velox_ui.services.model_params import ModelParamsStore
+
 __all__ = ["AppState"]
 
 _log = logging.getLogger("velox.state")
@@ -42,8 +45,11 @@ class AppState:
 
     __slots__ = (
         "_http",
+        "_model_jobs",
+        "_model_params",
         "_tasks",
         "db",
+        "discovery",
         "local_user_id",
         "providers",
         "secrets",
@@ -60,7 +66,28 @@ class AppState:
         self.local_user_id: str | None = None
         self.started_at_ms = 0
         self._http: httpx.AsyncClient | None = None
+        self.discovery: asyncio.Task[Any] | None = None
+        self._model_jobs: ModelJobs | None = None
+        self._model_params: ModelParamsStore | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
+
+    @property
+    def model_jobs(self) -> ModelJobs:
+        """Model downloads and creations in progress, created on first use."""
+        if self._model_jobs is None:
+            from velox_ui.services.model_jobs import ModelJobs
+
+            self._model_jobs = ModelJobs(self)
+        return self._model_jobs
+
+    @property
+    def model_params(self) -> ModelParamsStore:
+        """Saved per-model sampling parameters, created on first use."""
+        if self._model_params is None:
+            from velox_ui.services.model_params import ModelParamsStore
+
+            self._model_params = ModelParamsStore(self)
+        return self._model_params
 
     @property
     def http(self) -> httpx.AsyncClient:
@@ -76,6 +103,42 @@ class AppState:
 
             self._http = build_http_client()
         return self._http
+
+    async def http_client(self) -> httpx.AsyncClient:
+        """The shared HTTP client, built in a worker thread if it does not exist yet.
+
+        Background work that starts together with the server uses this instead of
+        :attr:`http`. Importing httpx and building an HTTP/2 client is roughly 70 ms of
+        synchronous work, and done on the event loop it would run before the server
+        answers its first request — measured as exactly that much added to every
+        zero-configuration cold start. In a thread it interleaves with serving instead.
+
+        If a request built the client on the loop in the meantime, that one wins and
+        the thread's copy is closed, so there is still exactly one client.
+        """
+        if self._http is not None:
+            return self._http
+        return await self._adopt(await asyncio.to_thread(_build_http_client))
+
+    async def _adopt(self, client: httpx.AsyncClient) -> httpx.AsyncClient:
+        """Keep a freshly built client unless another one appeared while it was built."""
+        if self._http is None:
+            self._http = client
+            return client
+        await client.aclose()
+        return self._http
+
+    async def discovery_settled(self, timeout_s: float = 3.0) -> None:
+        """Wait, briefly, for first-run autodiscovery to finish if it is still running.
+
+        Discovery runs in the background so it never delays readiness; this keeps the
+        first model listing after a start from coming back empty just because the probe
+        had not finished yet. Never raises and never cancels the discovery.
+        """
+        task = self.discovery
+        if task is None or task.done():
+            return
+        await asyncio.wait({task}, timeout=timeout_s)
 
     async def close_http(self) -> None:
         """Close the HTTP client if one was ever built."""
@@ -126,3 +189,10 @@ class AppState:
         del done
         for task in still_running:
             task.cancel()
+
+
+def _build_http_client() -> httpx.AsyncClient:
+    """Import httpx and build the client; run in a worker thread by ``http_client``."""
+    from velox_ui.providers.httpclient import build_http_client
+
+    return build_http_client()

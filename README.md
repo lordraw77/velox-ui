@@ -42,13 +42,13 @@ fork, with an architecture built around that last number.
 
 | Target | Budget | Measured today |
 |---|---|---|
-| Time-to-first-token overhead vs a direct backend call | < 15 ms p95 | **10.2 ms** |
-| Cold start | < 1 s | **0.92 s** |
-| Resident memory, idle | < 150 MB | **127 MB** |
+| Time-to-first-token overhead vs a direct backend call | < 15 ms p95 | **10.4 ms** |
+| Cold start | < 1 s | **0.88 s** |
+| Resident memory, idle | < 150 MB | **128 MB** |
 | Container image | < 250 MB | **186 MB** |
-| Open a 5 000-message conversation | < 150 ms | **103 ms** (storage half; see note) |
-| List 10 000 conversations | < 30 ms | **1.6 ms** |
-| Frontend bundle | < 200 KB gzip | **30.7 KB** |
+| Open a 5 000-message conversation | < 150 ms | **9.8 ms** (over HTTP; see note) |
+| List 10 000 conversations | < 30 ms | **2.0 ms** |
+| Frontend bundle | < 200 KB gzip | **37.3 KB** |
 
 Measured on a 4-core x86-64 Linux host with `python -m bench`, against deterministic
 local fixtures — no GPU, no network, no API key. Reproduce them yourself; the suite
@@ -56,10 +56,12 @@ runs in CI on every change and a regression fails the build (ADR-0015).
 
 Two of those numbers need their caveat stated rather than buried. The
 time-to-first-token figure is a *difference*: the same request is timed straight to the
-backend and through velox-ui over the same loopback socket, and 10.2 ms is what
+backend and through velox-ui over the same loopback socket, and 10.4 ms is what
 separates them — an absolute number there would mostly measure the model. The
-5 000-message figure covers the database query and tree assembly only; the rendering
-half joins it in phase 3.
+5 000-message figure is the whole HTTP request that opens the conversation, which
+returns its newest page rather than all of it: the interface virtualises and fetches
+earlier pages as the reader scrolls up. Reading the entire history back takes about
+0.4 s over 25 pages, and the benchmark prints that alongside the headline.
 
 ## How it is built
 
@@ -100,10 +102,10 @@ one is a TOML entry rather than code
 |---|---|---|
 | Ollama | native `/api/*` | **shipped** |
 | llama.cpp / `llama-server` | native, with GBNF grammars and prompt-cache reuse | **shipped** |
-| vLLM, LM Studio, TGI, TabbyAPI, KoboldCpp, LocalAI, Jan, llamafile, mlx_lm | OpenAI-compatible preset | phase 4 |
+| vLLM, LM Studio, TGI, TabbyAPI, KoboldCpp, LocalAI, Jan, llamafile, mlx_lm, Text Generation WebUI | OpenAI-compatible preset | **shipped** |
 | Groq, OpenRouter, NVIDIA NIM, OpenAI | OpenAI-compatible preset | phase 5 |
 | Google Gemini, Anthropic, Mistral, Cloudflare Workers AI | native | phase 5 |
-| Custom OpenAI-compatible | manual | phase 4 |
+| Custom OpenAI-compatible | manual | **shipped** |
 
 The contract, the capability model and the error taxonomy are specified in
 [docs/design/04-provider-interface.md](docs/design/04-provider-interface.md), and
@@ -117,14 +119,29 @@ separated thinking channel surfaced as its own event; the full sampling paramete
 through; and the backend's own token counts and timings reported verbatim, with cost
 stated as exactly zero for local models.
 
+### Managing local models
+
+The **Models** page shows what each backend has loaded — memory, how much of it is on the
+GPU, when it will unload — and what is installed. On Ollama it also downloads models with
+live progress, creates them from a Modelfile, and copies, deletes and unloads them.
+Downloads run on the server, so closing the page does not cancel one
+([ADR-0017](docs/adr/0017-model-jobs-run-on-the-server.md)).
+
+**Parameters**, next to the model picker, saves per-model settings such as `num_ctx`,
+`num_gpu`, `keep_alive` or `mirostat` and applies them to every message. It shows only
+what the model's backend accepts, with the model's own defaults as placeholders.
+
 ### Pointing velox-ui at a backend
 
 ```bash
-VELOX_PROVIDERS_OLLAMA_HOSTS=http://192.168.1.10:11434 velox serve
+VELOX_PROVIDER_OLLAMA_HOSTS=http://192.168.1.10:11434 velox serve
 ```
 
-Several hosts are comma-separated, and `VELOX_PROVIDERS_LLAMACPP_HOSTS` works the same
-way. Configure nothing and velox-ui probes the conventional local ports at startup and
+Several hosts are comma-separated, and `VELOX_PROVIDER_LLAMACPP_HOSTS` works the same
+way. Every other backend is configured from its preset — `VELOX_PROVIDER_LMSTUDIO_HOSTS`,
+`VELOX_PROVIDER_VLLM_HOSTS`, `VELOX_PROVIDER_VLLM_API_KEY` — or added in the interface
+under **Providers**, which tests the address first, stores the key encrypted and only
+ever shows it masked. Configure nothing and velox-ui probes the conventional local ports at startup and
 uses whatever answers — loopback only, in the background, never the LAN.
 
 ## Configuration

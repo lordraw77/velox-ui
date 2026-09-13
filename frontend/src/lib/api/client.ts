@@ -16,10 +16,30 @@ import type {
   Chat,
   ChatPage,
   ClientConfig,
+  DiscoveredBackend,
+  InstalledModel,
+  JobSnapshot,
+  MessagePage,
+  ModelDetails,
+  ModelParams,
+  ParamValue,
+  Preset,
+  ProbeResult,
   ProviderGroup,
-  ProviderHealth,
+  ProviderInfo,
+  RunningModel,
   Session,
 } from "./types";
+
+/**
+ * Encode a model name or reference for a path parameter.
+ *
+ * Model names contain `/` and `:` (`hf.co/org/model:Q4_K_M`). Each segment is encoded,
+ * the slashes are kept, and the server's path parameter matches the whole thing.
+ */
+export function pathOf(name: string): string {
+  return name.split("/").map(encodeURIComponent).join("/");
+}
 
 /** An error carrying the server's typed envelope. */
 export class VeloxApiError extends Error {
@@ -81,16 +101,16 @@ export class ApiClient {
     return (await response.json()) as T;
   }
 
-  /** Open a streaming POST, returning the raw response for an SSE reader. */
+  /** Open a streaming request, returning the raw response for an SSE reader. */
   async stream(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
-    let response = await this.#send(path, {
-      method: "POST",
-      body: JSON.stringify(body),
-      signal,
-    });
+    const init: RequestInit =
+      body === undefined
+        ? { method: "GET", signal }
+        : { method: "POST", body: JSON.stringify(body), signal };
+    let response = await this.#send(path, init);
 
     if (response.status === 401 && this.#session && (await this.#tryRefresh())) {
-      response = await this.#send(path, { method: "POST", body: JSON.stringify(body), signal });
+      response = await this.#send(path, init);
     }
 
     if (!response.ok || !response.body) {
@@ -159,8 +179,123 @@ export class ApiClient {
     return this.request(`/api/models${refresh ? "?refresh=true" : ""}`);
   }
 
-  providers(): Promise<{ providers: ProviderHealth[] }> {
+  providers(): Promise<{ providers: ProviderInfo[] }> {
     return this.request("/api/providers");
+  }
+
+  presets(): Promise<{ presets: Preset[] }> {
+    return this.request("/api/providers/presets");
+  }
+
+  probe(baseUrl: string, apiKey: string): Promise<ProbeResult> {
+    return this.#json("POST", "/api/providers/probe", { base_url: baseUrl, api_key: apiKey });
+  }
+
+  autodiscover(): Promise<{ found: DiscoveredBackend[] }> {
+    return this.#json("POST", "/api/providers/autodiscover");
+  }
+
+  createProvider(body: {
+    preset: string;
+    base_url: string;
+    id: string;
+    name: string;
+    api_key: string;
+  }): Promise<ProviderInfo> {
+    return this.#json("POST", "/api/providers", body);
+  }
+
+  updateProvider(
+    id: string,
+    patch: { name?: string; base_url?: string; api_key?: string },
+  ): Promise<ProviderInfo> {
+    return this.#json("PATCH", `/api/providers/${encodeURIComponent(id)}`, patch);
+  }
+
+  deleteProvider(id: string): Promise<void> {
+    return this.request<void>(`/api/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  installed(providerId: string): Promise<{ models: InstalledModel[] }> {
+    return this.request(`/api/providers/${encodeURIComponent(providerId)}/local/models`);
+  }
+
+  showModel(providerId: string, name: string): Promise<ModelDetails> {
+    return this.request(
+      `/api/providers/${encodeURIComponent(providerId)}/local/models/${pathOf(name)}`,
+    );
+  }
+
+  running(providerId: string): Promise<{ models: RunningModel[] }> {
+    return this.request(`/api/providers/${encodeURIComponent(providerId)}/local/running`);
+  }
+
+  unload(providerId: string, name: string): Promise<void> {
+    return this.#json("POST", `/api/providers/${encodeURIComponent(providerId)}/local/unload`, {
+      name,
+    });
+  }
+
+  deleteModel(providerId: string, name: string): Promise<void> {
+    return this.request<void>(
+      `/api/providers/${encodeURIComponent(providerId)}/local/models/${pathOf(name)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  copyModel(providerId: string, source: string, destination: string): Promise<void> {
+    return this.#json("POST", `/api/providers/${encodeURIComponent(providerId)}/local/copy`, {
+      source,
+      destination,
+    });
+  }
+
+  /** Start (or join) a download on the server. Progress is followed separately. */
+  startPull(providerId: string, name: string): Promise<JobSnapshot> {
+    return this.#json(
+      "POST",
+      `/api/providers/${encodeURIComponent(providerId)}/local/pull?detach=true`,
+      { name },
+    );
+  }
+
+  startCreate(providerId: string, name: string, modelfile: string): Promise<JobSnapshot> {
+    return this.#json(
+      "POST",
+      `/api/providers/${encodeURIComponent(providerId)}/local/create?detach=true`,
+      { name, modelfile },
+    );
+  }
+
+  jobs(): Promise<{ jobs: JobSnapshot[] }> {
+    return this.request("/api/model-jobs");
+  }
+
+  followJob(id: string, signal: AbortSignal): Promise<Response> {
+    return this.stream(`/api/model-jobs/${encodeURIComponent(id)}/events`, undefined, signal);
+  }
+
+  cancelJob(id: string): Promise<void> {
+    return this.request<void>(`/api/model-jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  modelParams(modelRef: string): Promise<ModelParams> {
+    return this.request(`/api/model-params/${pathOf(modelRef)}`);
+  }
+
+  saveModelParams(modelRef: string, params: Record<string, ParamValue>): Promise<ModelParams> {
+    return this.#json("PUT", `/api/model-params/${pathOf(modelRef)}`, params);
+  }
+
+  resetModelParams(modelRef: string): Promise<void> {
+    return this.request<void>(`/api/model-params/${pathOf(modelRef)}`, { method: "DELETE" });
+  }
+
+  #json<T>(method: string, path: string, body?: unknown): Promise<T> {
+    return this.request<T>(path, {
+      method,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
   }
 
   chats(cursor?: string | null): Promise<ChatPage> {
@@ -171,6 +306,13 @@ export class ApiClient {
   chat(id: string, branch?: string): Promise<Chat> {
     const query = branch ? `?branch=${encodeURIComponent(branch)}` : "";
     return this.request<Chat>(`/api/chats/${id}${query}`);
+  }
+
+  /** The page of messages before `cursor`, oldest first. */
+  messages(id: string, cursor: string): Promise<MessagePage> {
+    return this.request<MessagePage>(
+      `/api/chats/${id}/messages?cursor=${encodeURIComponent(cursor)}`,
+    );
   }
 
   createChat(title: string, modelRef: string | null): Promise<{ id: string; title: string }> {

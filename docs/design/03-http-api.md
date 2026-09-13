@@ -40,16 +40,17 @@ Legend: **A** = admin only, **P** = public (no auth), **S** = streaming.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/providers` | secrets masked, health state inlined |
-| POST | `/api/providers` | |
-| PATCH/DELETE | `/api/providers/{id}` | |
+| POST | `/api/providers` | **A** from a preset; the key is encrypted before it is written |
+| PATCH/DELETE | `/api/providers/{id}` | **A** interface-added providers only; configured ones answer 403 |
 | GET | `/api/providers/presets` | catalogue from `providers/presets.toml` |
 | POST | `/api/providers/probe` | test a base URL before saving; returns detected kind |
 | POST | `/api/providers/autodiscover` | probe the well-known local ports |
 | POST | `/api/providers/{id}/refresh` | force model rediscovery |
 | GET | `/api/providers/{id}/health` | cached; never blocks |
-| GET | `/api/models` | unified list, local first, grouped, with capabilities |
+| GET | `/api/models` | unified list, local first, grouped, with capabilities, `supported_params` and `features` |
 | PATCH | `/api/models/{provider_id}/{model_key}` | rename / hide |
 | GET | `/api/models/{provider_id}/{model_key}` | full capability detail |
+| GET/PUT/DELETE | `/api/model-params/{model_ref}` | the caller's saved parameters for one model, applied to every turn; parameters its backend does not accept are rejected |
 
 ### Local model management
 
@@ -59,12 +60,21 @@ Generic where possible, backed by the adapter's `LocalModelAdmin` capability.
 |---|---|---|
 | GET | `/api/providers/{id}/local/models` | Ollama `/api/tags`, llama.cpp `/models` |
 | GET | `/api/providers/{id}/local/models/{name}` | `/api/show`, `/props` |
-| POST | `/api/providers/{id}/local/pull` | **S** SSE pull progress (bytes, layers, %) |
+| POST | `/api/providers/{id}/local/pull` | **S A** start or join a download job and stream it; `?detach=true` returns its snapshot (ADR-0017) |
 | DELETE | `/api/providers/{id}/local/models/{name}` | `/api/delete` |
 | POST | `/api/providers/{id}/local/copy` | `/api/copy` |
-| POST | `/api/providers/{id}/local/create` | create from a Modelfile |
+| POST | `/api/providers/{id}/local/create` | **S A** job: Modelfile text, or `from_model` plus overrides |
 | GET | `/api/providers/{id}/local/running` | `/api/ps`, `/slots` — loaded + VRAM/RAM |
-| POST | `/api/providers/{id}/local/unload` | `keep_alive: 0` |
+| POST | `/api/providers/{id}/local/unload` | **A** `keep_alive: 0` |
+| GET | `/api/model-jobs` | **A** running jobs, then those finished in the last 15 minutes |
+| GET | `/api/model-jobs/{job}/events` | **S A** follow a job: `progress` frames, then `done` |
+| DELETE | `/api/model-jobs/{job}` | **A** cancel; Ollama resumes a cancelled pull later |
+
+Reading (`models`, `models/{name}`, `running`) is open to any signed-in user; every change
+is for administrators. A backend without the capability answers
+`unsupported_capability`, and `GET /api/models` lists each provider's `features` so the
+interface never has to try an operation to find out. Model names keep their `/` and `:`
+in the path (`models/hf.co/org/model:Q4_K_M`).
 
 ## Chat
 
@@ -72,10 +82,10 @@ Generic where possible, backed by the adapter's `LocalModelAdmin` capability.
 |---|---|---|
 | GET | `/api/chats` | keyset: `?cursor=&limit=&folder=&tag=&archived=` |
 | POST | `/api/chats` | |
-| GET | `/api/chats/{id}` | active path + sibling counts; `?depth_from=` for paging |
+| GET | `/api/chats/{id}` | the newest page of the active branch + `messages_cursor`; `?branch=&limit=` |
 | PATCH/DELETE | `/api/chats/{id}` | rename, pin, archive, move, soft delete |
 | GET | `/api/chats/{id}/branch/{message_id}` | switch the active branch |
-| GET | `/api/chats/{id}/messages` | keyset within one chat, explicit columns |
+| GET | `/api/chats/{id}/messages` | older pages: `?cursor=&limit=`, oldest first, explicit columns |
 | POST | `/api/chats/{id}/completions` | **S** the hot path (see below) |
 | POST | `/api/chats/{id}/messages/{mid}/regenerate` | **S** new sibling |
 | PATCH | `/api/chats/{id}/messages/{mid}` | edit → new sibling branch |

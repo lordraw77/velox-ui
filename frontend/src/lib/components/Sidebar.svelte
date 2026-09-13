@@ -12,9 +12,12 @@
 
   interface Props {
     onselect: (id: string | null) => void;
+    onnavigate: (view: "models" | "providers") => void;
+    /** The view currently shown, to mark its entry. */
+    current: string;
   }
 
-  let { onselect }: Props = $props();
+  let { onselect, onnavigate, current }: Props = $props();
 
   async function remove(id: string, event: MouseEvent): Promise<void> {
     event.stopPropagation();
@@ -68,6 +71,15 @@
       <p class="hint empty"><span class="spinner"></span></p>
     {/if}
   </nav>
+
+  <div class="foot">
+    <button class="btn btn-ghost" class:active={current === "models"} onclick={() => onnavigate("models")} type="button" data-testid="nav-models">
+      {app.t("nav.models")}
+    </button>
+    <button class="btn btn-ghost" class:active={current === "providers"} onclick={() => onnavigate("providers")} type="button" data-testid="nav-providers">
+      {app.t("nav.providers")}
+    </button>
+  </div>
 </aside>
 
 <style>
@@ -130,6 +142,21 @@
   .row:hover .remove,
   .remove:focus-visible {
     opacity: 1;
+  }
+
+  .foot {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .foot .btn {
+    flex: 1;
+  }
+
+  .foot .active {
+    background: var(--bg-active);
   }
 
   .empty {

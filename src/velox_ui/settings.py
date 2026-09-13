@@ -17,6 +17,7 @@ underscores and uppercased: ``port`` is ``VELOX_PORT``, ``db.url`` is ``VELOX_DB
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import tomllib
 from enum import StrEnum
@@ -28,6 +29,7 @@ import msgspec
 __all__ = [
     "AuthSettings",
     "DatabaseSettings",
+    "EndpointSettings",
     "LogFormat",
     "ProviderSettings",
     "ServerKind",
@@ -112,19 +114,47 @@ class MetricsSettings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     require_auth: bool = False
 
 
-class ProviderSettings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
-    """Statically configured local backends.
+class EndpointSettings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    """One backend configured from a preset.
 
-    This is the phase-2 path: hosts are named directly rather than through the
-    database-backed provider CRUD the design describes, which lands with local model
-    management in phase 4. A configured host needs no API key and an unreachable one
-    is a normal, silent state (ADR-0008) — nothing here fails startup.
+    Attributes:
+        preset: Key into ``providers/presets.toml``: ``lmstudio``, ``vllm``,
+            ``custom``, ...
+        base_url: Address of the backend. Empty means the preset's default.
+        api_key: Credential, when the backend was started with one. Held in memory
+            only; configuration-sourced credentials are never written to the database.
+        id: Provider id, the first half of every ``model_ref``. Defaults to
+            ``<preset>-<n>``.
+        name: Label shown in the interface. Defaults to the preset's label.
+    """
+
+    preset: str
+    base_url: str = ""
+    api_key: str = ""
+    id: str = ""
+    name: str = ""
+
+
+class ProviderSettings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
+    """Backends configured from the file or the environment.
+
+    Backends can also be added from the interface; those are stored in the database.
+    Both kinds coexist, and configuration-sourced ones are read-only in the interface
+    so a change to ``velox.toml`` is never silently overridden. A configured host needs
+    no API key and an unreachable one is a normal, silent state (ADR-0008) — nothing
+    here fails startup.
+
+    Environment variables use the singular ``VELOX_PROVIDER_`` prefix —
+    ``VELOX_PROVIDER_OLLAMA_HOSTS`` — with ``VELOX_PROVIDERS_`` accepted as well. Any
+    preset can be configured the same way: ``VELOX_PROVIDER_LMSTUDIO_HOSTS`` and
+    ``VELOX_PROVIDER_VLLM_API_KEY``.
 
     Attributes:
         ollama_hosts: Base URLs of Ollama instances, each registered as
             ``ollama-0``, ``ollama-1``, ... in listing order.
         llamacpp_hosts: Base URLs of ``llama-server`` instances, registered as
             ``llamacpp-0``, ``llamacpp-1``, ...
+        endpoints: Backends configured from any preset.
         autodiscover: Probe the well-known local ports (11434, 8080, 1234, 8000) at
             startup when no hosts are configured at all, and use whichever answers.
             Never scans the LAN; that stays a manual, explicit action.
@@ -132,7 +162,13 @@ class ProviderSettings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
 
     ollama_hosts: tuple[str, ...] = ()
     llamacpp_hosts: tuple[str, ...] = ()
+    endpoints: tuple[EndpointSettings, ...] = ()
     autodiscover: bool = True
+
+    @property
+    def configured(self) -> bool:
+        """Whether any backend was named explicitly."""
+        return bool(self.ollama_hosts or self.llamacpp_hosts or self.endpoints)
 
 
 class Settings(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
@@ -216,6 +252,32 @@ def _read_toml(path: Path) -> dict[str, Any]:
         raise SettingsError(f"{path}: cannot be read: {exc}") from exc
 
 
+_LIST_FIELDS = frozenset({"cors_origins", "ollama_hosts", "llamacpp_hosts"})
+
+# Fields that cannot be expressed as one environment variable; they get dedicated
+# handling (see _collect_preset_env) instead of a variable that could never parse.
+_ENV_SKIPPED = frozenset({"endpoints"})
+
+# `VELOX_PROVIDER_<PRESET>_HOSTS` / `_API_KEY`. The preset name is matched lazily so
+# names that themselves contain underscores (MLX_LM, TEXTGEN_WEBUI) still resolve.
+_PRESET_ENV = re.compile(r"^VELOX_PROVIDERS?_([A-Z0-9_]+?)_(HOSTS|API_KEY)$")
+
+
+def _env_names(path: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the environment variable names for a setting, preferred first.
+
+    The ``providers`` section is addressed with a singular prefix,
+    ``VELOX_PROVIDER_OLLAMA_HOSTS``, because that is the name the project documents and
+    the one people write. The name derived mechanically from the section,
+    ``VELOX_PROVIDERS_OLLAMA_HOSTS``, is accepted too, so neither spelling is silently
+    ignored.
+    """
+    mechanical = ENV_PREFIX + "_".join(path).upper()
+    if path[0] == "providers" and len(path) > 1:
+        return (ENV_PREFIX + "PROVIDER_" + "_".join(path[1:]).upper(), mechanical)
+    return (mechanical,)
+
+
 def _collect_env_overrides(
     struct: type[msgspec.Struct], prefix: tuple[str, ...] = ()
 ) -> dict[str, Any]:
@@ -229,13 +291,83 @@ def _collect_env_overrides(
             if child:
                 overrides[field.name] = child
             continue
-        variable = ENV_PREFIX + "_".join(path).upper()
-        raw = os.environ.get(variable)
+        if field.name in _ENV_SKIPPED:
+            continue
+        raw = next((os.environ[name] for name in _env_names(path) if name in os.environ), None)
         if raw is None:
             continue
-        list_fields = {"cors_origins", "ollama_hosts", "llamacpp_hosts"}
-        overrides[field.name] = _split_list(raw) if field.name in list_fields else raw
+        overrides[field.name] = _split_list(raw) if field.name in _LIST_FIELDS else raw
     return overrides
+
+
+def _collect_preset_env() -> dict[str, dict[str, Any]]:
+    """Collect ``VELOX_PROVIDER_<PRESET>_HOSTS`` and ``_API_KEY`` variables.
+
+    Returns:
+        ``{preset: {"hosts": [...], "api_key": "..."}}`` for every preset mentioned.
+        Ollama and llama.cpp hosts are ordinary fields and are not included.
+
+    Raises:
+        SettingsError: If a variable names a preset that does not exist. A typo in a
+            variable name must not quietly configure nothing.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    for name, raw in os.environ.items():
+        match = _PRESET_ENV.match(name)
+        if match is None:
+            continue
+        preset, what = match.group(1).lower(), match.group(2)
+        if preset in {"ollama", "llamacpp"} and what == "HOSTS":
+            continue
+        from velox_ui.providers.presets import load_presets
+
+        if preset not in load_presets():
+            known = ", ".join(sorted(load_presets()))
+            raise SettingsError(
+                f"{name}: unknown provider preset {preset!r}. Known presets: {known}."
+            )
+        entry = found.setdefault(preset, {})
+        if what == "HOSTS":
+            entry["hosts"] = _split_list(raw)
+        else:
+            entry["api_key"] = raw.strip()
+    return found
+
+
+def _merge_endpoints(
+    configured: list[dict[str, Any]], from_env: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Combine file-configured endpoints with those named in the environment.
+
+    The environment wins, as it does for every other setting: hosts given for a preset
+    replace that preset's entries from the file, and an API key alone applies to the
+    file's entries for it, or configures the preset at its default address when the
+    file has none — which is how ``VELOX_PROVIDER_GROQ_API_KEY`` on its own is enough.
+    """
+    merged = [
+        dict(entry)
+        for entry in configured
+        if not (
+            isinstance(entry, dict) and "hosts" in from_env.get(str(entry.get("preset")), {})
+        )
+    ]
+    for preset, entry in from_env.items():
+        api_key = entry.get("api_key", "")
+        if "hosts" in entry:
+            merged.extend(
+                {"preset": preset, "base_url": host, "api_key": api_key}
+                for host in entry["hosts"]
+            )
+            continue
+        existing = [item for item in merged if item.get("preset") == preset]
+        if existing:
+            for item in existing:
+                item.setdefault("api_key", api_key)
+                if not item["api_key"]:
+                    item["api_key"] = api_key
+        else:
+            merged.append({"preset": preset, "api_key": api_key})
+    return merged
 
 
 def _split_list(raw: str) -> list[str]:
@@ -287,6 +419,42 @@ def _resolve_secret_key(settings: Settings) -> str:
     return key
 
 
+_PROVIDER_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def _validate_endpoints(providers: ProviderSettings, source: str) -> None:
+    """Check preset-configured endpoints against the preset catalogue.
+
+    Raises:
+        SettingsError: For an unknown preset, a preset with no default address and no
+            ``base_url``, an id that cannot appear in a model reference, or two
+            endpoints sharing an id.
+    """
+    from velox_ui.providers.presets import load_presets
+
+    presets = load_presets()
+    seen: set[str] = set()
+    for index, endpoint in enumerate(providers.endpoints):
+        where = f"invalid configuration from {source}: providers.endpoints[{index}]"
+        preset = presets.get(endpoint.preset)
+        if preset is None:
+            known = ", ".join(sorted(presets))
+            raise SettingsError(
+                f"{where}: unknown preset {endpoint.preset!r}. Known presets: {known}."
+            )
+        if not (endpoint.base_url or preset.base_url):
+            raise SettingsError(f"{where}: preset {endpoint.preset!r} needs a base_url.")
+        if endpoint.id and not _PROVIDER_ID.match(endpoint.id):
+            raise SettingsError(
+                f"{where}: id {endpoint.id!r} must be lowercase letters, digits and "
+                "hyphens, at most 40 characters."
+            )
+        if endpoint.id:
+            if endpoint.id in seen:
+                raise SettingsError(f"{where}: id {endpoint.id!r} is used twice.")
+            seen.add(endpoint.id)
+
+
 def load_settings(config_path: str | os.PathLike[str] | None = None) -> Settings:
     """Load, merge and validate configuration.
 
@@ -308,13 +476,26 @@ def load_settings(config_path: str | os.PathLike[str] | None = None) -> Settings
     data = _deep_merge(data, _collect_env_overrides(Settings))
     data.pop("config_path", None)
 
+    source = f"{path}" if path is not None else "environment"
+    preset_env = _collect_preset_env()
+    if preset_env:
+        providers = data.setdefault("providers", {})
+        if not isinstance(providers, dict):
+            raise SettingsError(
+                f"invalid configuration from {source}: [providers] must be a table"
+            )
+        providers["endpoints"] = _merge_endpoints(
+            list(providers.get("endpoints", [])), preset_env
+        )
+
     try:
         # strict=False coerces the strings that necessarily come out of the
         # environment into ints, floats, bools and enums.
         settings = msgspec.convert(data, Settings, strict=False, dec_hook=_decode_custom)
     except msgspec.ValidationError as exc:
-        source = f"{path}" if path is not None else "environment"
         raise SettingsError(f"invalid configuration from {source}: {exc}") from exc
+    if settings.providers.endpoints:
+        _validate_endpoints(settings.providers, source)
 
     settings = msgspec.structs.replace(
         settings,

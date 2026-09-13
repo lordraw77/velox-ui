@@ -243,6 +243,11 @@ def _config(args: argparse.Namespace) -> int:
     if settings.auth.admin_password:
         rendered["auth"]["admin_password"] = mask_secret(settings.auth.admin_password)
     rendered["database_url"] = _mask_url_password(settings.database_url)
+    for endpoint, shown in zip(
+        settings.providers.endpoints, rendered["providers"]["endpoints"], strict=True
+    ):
+        if endpoint.api_key:
+            shown["api_key"] = mask_secret(endpoint.api_key)
     source = settings.config_path or "defaults and environment only"
     print(f"configuration is valid (source: {source})")
     print(msgspec.json.format(msgspec.json.encode(rendered).decode("utf-8"), indent=2))

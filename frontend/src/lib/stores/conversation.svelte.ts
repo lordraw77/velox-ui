@@ -61,6 +61,10 @@ class ConversationStore {
   usage = $state<UsageEvent | null>(null);
   streamError = $state<ApiError | null>(null);
 
+  /** Cursor for the page before the oldest loaded message; null once at the start. */
+  olderCursor = $state<string | null>(null);
+  loadingOlder = $state(false);
+
   #controller: AbortController | null = null;
   #sink: TokenSink | null = null;
   #lastMarkdownAt = 0;
@@ -78,6 +82,7 @@ class ConversationStore {
       this.id = chat.id;
       this.title = chat.title;
       this.messages = chat.messages.map(toRendered);
+      this.olderCursor = chat.messages_cursor;
       this.usage = null;
       this.streamError = null;
       this.#renderAll();
@@ -94,8 +99,36 @@ class ConversationStore {
     this.id = null;
     this.title = "";
     this.messages = [];
+    this.olderCursor = null;
     this.usage = null;
     this.streamError = null;
+  }
+
+  /**
+   * Load the page before the oldest message on screen.
+   *
+   * A conversation opens with its newest page only (ADR-0007), so its length never
+   * decides how long opening it takes. Earlier pages arrive as the reader scrolls up.
+   */
+  async loadOlder(): Promise<void> {
+    const chatId = this.id;
+    const cursor = this.olderCursor;
+    if (!chatId || !cursor || this.loadingOlder) return;
+    this.loadingOlder = true;
+    try {
+      const page = await api.messages(chatId, cursor);
+      if (this.id !== chatId) return;
+      const older = page.items.map(toRendered);
+      this.messages = [...older, ...this.messages];
+      this.olderCursor = page.next_cursor;
+      for (const message of older) {
+        if (message.role === "assistant" && message.content) this.#render(message, true);
+      }
+    } catch (error) {
+      app.report(error);
+    } finally {
+      this.loadingOlder = false;
+    }
   }
 
   /** Render the markdown of every loaded message. */

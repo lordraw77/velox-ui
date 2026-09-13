@@ -27,9 +27,16 @@
     messages: RenderedMessage[];
     /** Set while a reply is streaming, so the view follows the new text. */
     streaming: boolean;
+    /** Set while an earlier page is being fetched. */
+    loadingOlder?: boolean;
+    /** Called when the reader nears the top, to fetch the page before it. */
+    onreachtop?: () => void;
   }
 
-  let { messages, streaming }: Props = $props();
+  let { messages, streaming, loadingOlder = false, onreachtop }: Props = $props();
+
+  /** How close to the top, in pixels, the next page starts loading. */
+  const LOAD_OLDER_MARGIN = 800;
 
   const list = new VirtualList({ estimatedItemHeight: 132, overscan: 3 });
 
@@ -49,10 +56,35 @@
    */
   let revision = $state(0);
 
+  /**
+   * Older pages are inserted at the start. Detected by the first message changing to
+   * one that precedes the previous first, so the list can shift its measurements
+   * instead of treating it as a different conversation. Plain variables, not state:
+   * they are bookkeeping between two renders, and making them reactive would loop.
+   */
+  let firstId: string | null = null;
+  let pendingShift = 0;
+
   let window_ = $derived.by(() => {
     void revision;
+    const first = messages[0]?.id ?? null;
+    if (firstId !== null && first !== firstId && messages.length > list.count) {
+      const shifted = messages.findIndex((message) => message.id === firstId);
+      if (shifted > 0) pendingShift += list.prepend(shifted);
+    }
+    firstId = first;
     list.setCount(messages.length);
     return list.windowFor(scrollTop, viewportHeight);
+  });
+
+  /** Keep the message under the reader's eyes still when a page is prepended. */
+  $effect(() => {
+    void window_.totalHeight;
+    if (pendingShift === 0 || !viewport) return;
+    const shift = pendingShift;
+    pendingShift = 0;
+    viewport.scrollTop += shift;
+    scrollTop = viewport.scrollTop;
   });
 
   let visible = $derived(messages.slice(window_.start, window_.end));
@@ -87,6 +119,7 @@
     // Re-deciding on every scroll is what lets the reader take control by scrolling
     // up and hand it back by scrolling down, with no button to press.
     anchored = list.isAtBottom(scrollTop, viewport.clientHeight);
+    if (scrollTop < LOAD_OLDER_MARGIN) onreachtop?.();
   }
 
   function measure(index: number, height: number): void {
@@ -103,6 +136,9 @@
   }
 </script>
 
+{#if loadingOlder}
+  <div class="older" role="status"><span class="spinner"></span></div>
+{/if}
 <div class="viewport" bind:this={viewport} onscroll={onScroll}>
   <div class="content" style:height="{window_.totalHeight}px">
     <div class="window" style:transform="translateY({window_.offsetTop}px)">
@@ -117,6 +153,13 @@
 </div>
 
 <style>
+  .older {
+    display: flex;
+    justify-content: center;
+    padding: 0.35rem;
+    color: var(--text-faint);
+  }
+
   .viewport {
     flex: 1;
     overflow-y: auto;

@@ -92,6 +92,23 @@ export class VirtualList {
   }
 
   /**
+   * Insert unmeasured items at the start, as when older messages are loaded.
+   *
+   * @returns The height added above every existing item, which the caller adds to
+   *   `scrollTop` so the message the reader is looking at stays where it is. When the
+   *   inserted items are measured later, {@link measure} reports the remaining
+   *   correction the same way.
+   */
+  prepend(count: number): number {
+    if (count <= 0) return 0;
+    const estimate = this.estimate;
+    this.#heights.splice(0, 0, ...new Array<number>(count).fill(estimate));
+    this.#measured.splice(0, 0, ...new Array<boolean>(count).fill(false));
+    this.#markDirty(0);
+    return estimate * count;
+  }
+
+  /**
    * Record a measured height.
    *
    * @returns The pixel delta this measurement introduced above the item, which the

@@ -92,20 +92,36 @@ async def list_chats(
     )
 
 
+MESSAGE_PAGE_DEFAULT = 60
+"""Messages sent when a conversation is opened.
+
+Several screens' worth: the client virtualises, so what matters is having enough to
+fill the viewport and absorb a quick upward flick before the next page arrives.
+"""
+
+MESSAGE_PAGE_MAX = 200
+
+
 @router.get("/{chat_id}", summary="Open a conversation")
 async def get_chat(
     chat_id: str,
     principal: CurrentPrincipal,
     state: State,
     branch: Annotated[str | None, Query()] = None,
+    limit: Annotated[int | None, Query()] = None,
 ) -> Response:
-    """Return the conversation and the messages on its active branch.
+    """Return the conversation and the newest page of its active branch.
+
+    Older messages are fetched with ``GET /api/chats/{id}/messages`` and the
+    ``messages_cursor`` returned here, so opening a conversation costs one page no
+    matter how long it is (ADR-0007).
 
     Args:
         chat_id: The conversation.
         principal: The caller.
         state: Application state.
         branch: Load a different branch tip instead of the stored active leaf.
+        limit: Page size.
 
     Raises:
         NotFoundError: If the conversation is not the caller's, or does not exist.
@@ -115,7 +131,11 @@ async def get_chat(
         chat = await repository.get(chat_id, user_id=principal.user_id)
         if chat is None:
             raise NotFoundError("No such conversation.")
-        path = await repository.load_active_path(chat_id, leaf_id=branch or chat.active_leaf_id)
+        path, older = await repository.load_path_page(
+            chat_id,
+            start_id=branch or chat.active_leaf_id,
+            limit=_message_limit(limit),
+        )
         payload = {
             "id": chat.id,
             "title": chat.title,
@@ -128,8 +148,51 @@ async def get_chat(
             "created_at": chat.created_at,
             "updated_at": chat.updated_at,
             "messages": path,
+            "messages_cursor": encode_cursor((older,)) if older else None,
         }
     return json_response(payload)
+
+
+@router.get("/{chat_id}/messages", summary="Page backwards through a conversation")
+async def list_messages(
+    chat_id: str,
+    principal: CurrentPrincipal,
+    state: State,
+    cursor: Annotated[str | None, Query()] = None,
+    branch: Annotated[str | None, Query()] = None,
+    limit: Annotated[int | None, Query()] = None,
+) -> Response:
+    """Return one page of the active branch, older than the cursor.
+
+    Without a cursor this is the newest page, the same one ``GET /api/chats/{id}``
+    embeds. Pages are in reading order, oldest first, so a client prepends them as
+    they arrive.
+
+    Raises:
+        NotFoundError: If the conversation is not the caller's, or does not exist.
+        ValidationError: If the cursor is malformed.
+    """
+    start_id = str(decode_cursor(cursor, arity=1)[0]) if cursor else None
+    async with state.db.session() as session:
+        repository = ChatRepository(session)
+        chat = await repository.get(chat_id, user_id=principal.user_id)
+        if chat is None:
+            raise NotFoundError("No such conversation.")
+        items, older = await repository.load_path_page(
+            chat_id,
+            start_id=start_id or branch or chat.active_leaf_id,
+            limit=_message_limit(limit),
+        )
+    return json_response(
+        {"items": items, "next_cursor": encode_cursor((older,)) if older else None}
+    )
+
+
+def _message_limit(limit: int | None) -> int:
+    """Clamp a requested message page size."""
+    if limit is None:
+        return MESSAGE_PAGE_DEFAULT
+    return max(1, min(limit, MESSAGE_PAGE_MAX))
 
 
 @router.delete("/{chat_id}", status_code=204, summary="Delete a conversation")

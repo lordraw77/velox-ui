@@ -142,6 +142,7 @@ class Provider(Protocol):
     """One configured backend instance."""
 
     config: ProviderConfig
+    supported_params: frozenset[str]  # the interface shows controls only for these
 
     async def list_models(self, *, refresh: bool = False) -> list[ModelInfo]:
         """Discover models. Cached by the registry; `refresh` bypasses the cache."""
@@ -166,15 +167,22 @@ Optional capability mixins, queried with `isinstance`/`hasattr` by the routes th
 need them — never by provider name:
 
 ```python
+class ModelInspector(Protocol):
+    """What is installed and what is loaded. Ollama and llama.cpp."""
+
+    async def show(self, name: str) -> ModelDetails: ...  # /api/show, /props
+    async def running(self) -> list[RunningModel]: ...  # /api/ps, /slots
+
+
 class LocalModelAdmin(Protocol):
-    """Implemented by ollama and llamacpp adapters."""
+    """Changing a backend's models. Ollama only: llama-server serves the model it
+    was started with and cannot download or delete one."""
 
     def pull(self, name: str) -> AsyncIterator[PullProgress]: ...
+    def create(self, spec: CreateModelSpec) -> AsyncIterator[PullProgress]: ...
     async def delete(self, name: str) -> None: ...
     async def copy(self, src: str, dst: str) -> None: ...
-    async def create(self, name: str, modelfile: str) -> AsyncIterator[PullProgress]: ...
-    async def running(self) -> list[RunningModel]: ...  # /api/ps, /slots
-    async def unload(self, name: str) -> None: ...
+    async def unload(self, name: str) -> None: ...  # keep_alive: 0
 
 
 class RawPassthrough(Protocol):
@@ -218,15 +226,7 @@ OpenAI's protocol (OpenAI, Groq, OpenRouter, NVIDIA, and Cloudflare's compatible
 are *presets* over `openai_compat`, not separate adapters:
 
 ```toml
-# providers/presets.toml (excerpt)
-[groq]
-kind = "openai_compat"
-label = "Groq"
-base_url = "https://api.groq.com/openai/v1"
-auth = "bearer"
-capabilities = { tools = "native", json_mode = true }
-quirks = { usage_in_final_chunk = true }
-
+# providers/presets.toml (excerpt; the file documents every field)
 [ollama]
 kind = "ollama"
 label = "Ollama"
@@ -234,15 +234,22 @@ base_url = "http://localhost:11434"
 auth = "none"
 local = true
 discovery_ports = [11434]
+probe_path = "/api/tags"
 
-[lmstudio]
+[vllm]
 kind = "openai_compat"
-label = "LM Studio"
-base_url = "http://localhost:1234/v1"
-auth = "none"
+label = "vLLM"
+base_url = "http://localhost:8000/v1"
+auth = "optional"
 local = true
-discovery_ports = [1234]
-quirks = { no_usage_chunk = true, ignores_stop_array = false }
+discovery_ports = [8000]
+sampling = ["top_k", "min_p", "repeat_penalty"]       # beyond the OpenAI set
+rename = { repeat_penalty = "repetition_penalty" }   # velox name -> backend name
+
+[custom]
+kind = "openai_compat"
+label = "Custom OpenAI-compatible"
+auth = "optional"      # `local` omitted: loopback and private addresses count as local
 ```
 
 Adding a provider is one file in `providers/` plus one registry entry, or just a

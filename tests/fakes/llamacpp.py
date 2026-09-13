@@ -42,6 +42,16 @@ async def _health(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+async def _slots(request: Request) -> JSONResponse:
+    del request
+    return JSONResponse(
+        [
+            {"id": 0, "n_ctx": 4096, "is_processing": True},
+            {"id": 1, "n_ctx": 4096, "is_processing": False},
+        ]
+    )
+
+
 async def _models(request: Request) -> Response:
     del request
     # A single-model server: llama.cpp answers /v1/models, so the adapter prefers it.
@@ -112,6 +122,7 @@ def create_app() -> Starlette:
         routes=[
             Route("/props", _props, methods=["GET"]),
             Route("/health", _health, methods=["GET"]),
+            Route("/slots", _slots, methods=["GET"]),
             Route("/v1/models", _models, methods=["GET"]),
             Route("/completion", _completion, methods=["POST"]),
             Route("/embedding", _embedding, methods=["POST"]),

@@ -57,6 +57,9 @@ class AppStore {
   error = $state<ApiError | null>(null);
   booted = $state(false);
 
+  /** Whether the advanced parameter panel is open. */
+  paramsOpen = $state(false);
+
   /** Every model across every provider, local first. */
   get models(): ModelEntry[] {
     return this.providers.flatMap((group) => group.models);
@@ -64,6 +67,16 @@ class AppStore {
 
   get model(): ModelEntry | null {
     return this.models.find((entry) => entry.model_ref === this.modelRef) ?? null;
+  }
+
+  /**
+   * Whether the caller may change backends and models.
+   *
+   * With authentication disabled the single local account is the administrator. The
+   * server enforces this on every request; here it only decides which controls to show.
+   */
+  get isAdmin(): boolean {
+    return this.config?.auth.enabled === false || this.session?.role === "admin";
   }
 
   get authenticated(): boolean {

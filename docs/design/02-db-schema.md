@@ -90,8 +90,11 @@ CREATE TABLE access_rule (
 ## Providers and models
 
 ```sql
+-- Only providers added in the interface are stored. Those from configuration or
+-- autodiscovery are rebuilt at every start, so an edited velox.toml never competes
+-- with a stale copy — and there is no `origin` column to keep in sync.
 CREATE TABLE provider (
-  id            CHAR(26) PRIMARY KEY,
+  id            VARCHAR(40) PRIMARY KEY,    -- readable slug; first half of model_ref
   name          TEXT NOT NULL,              -- user-visible label
   kind          TEXT NOT NULL,              -- 'ollama' | 'llamacpp' | 'openai_compat'
                                             -- | 'gemini' | 'anthropic' | 'mistral'
@@ -102,7 +105,6 @@ CREATE TABLE provider (
   extra         BLOB,                       -- e.g. cloudflare account_id, org headers
   enabled       INTEGER NOT NULL DEFAULT 1,
   is_local      INTEGER NOT NULL DEFAULT 0, -- drives UI ordering and cost display
-  origin        TEXT NOT NULL,              -- 'ui' | 'config' | 'autodiscovered'
   sort_order    INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL
@@ -117,8 +119,21 @@ CREATE TABLE secret (
   updated_at INTEGER NOT NULL
 );
 
+-- A user's saved sampling parameters per model, applied to every turn. Keyed by
+-- model_ref rather than a provider foreign key: the provider may come from
+-- configuration and have no row at all. Cached in-process on the completion path,
+-- including the (common) absence of a row.
+CREATE TABLE model_params (
+  user_id    CHAR(26) NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  model_ref  VARCHAR(255) NOT NULL,
+  params     BLOB NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, model_ref)
+);
+
 -- Discovery cache. Truth lives in the backend; this survives restarts and lets the
 -- model picker render before any health probe completes.
+-- Not yet implemented: model listings and health are cached in memory for now.
 CREATE TABLE model_cache (
   id             CHAR(26) PRIMARY KEY,
   provider_id    CHAR(26) NOT NULL REFERENCES provider(id) ON DELETE CASCADE,
