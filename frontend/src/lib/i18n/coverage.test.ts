@@ -32,7 +32,8 @@ function referencedKeys(): Set<string> {
   const keys = new Set<string>();
   const call = /\bt\(\s*"([a-z][\w.]*)"/gi;
   // Keys held in a map and looked up dynamically, as the status and error components do.
-  const literal = /"((?:status|error|providers|metrics|models|chat|auth|theme|common|app|nav|params|local|jobs)\.[\w]+)"/g;
+  const literal =
+    /"((?:status|error|providers|metrics|models|chat|auth|theme|common|app|nav|params|local|jobs|admin|search)\.[\w]+)"/g;
 
   for (const file of walk(SOURCE_ROOT)) {
     const source = readFileSync(file, "utf-8");

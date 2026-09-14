@@ -12,11 +12,17 @@
  */
 
 import type {
+  AdminUser,
+  AdminUserPage,
   ApiError,
   Chat,
   ChatPage,
   ClientConfig,
+  CustomModel,
+  CustomModelVisibility,
   DiscoveredBackend,
+  FallbackEntry,
+  Folder,
   InstalledModel,
   JobSnapshot,
   MessagePage,
@@ -28,7 +34,11 @@ import type {
   ProviderGroup,
   ProviderInfo,
   RunningModel,
+  SearchResult,
   Session,
+  Tag,
+  UserRole,
+  UserStatus,
 } from "./types";
 
 /**
@@ -298,9 +308,17 @@ export class ApiClient {
     });
   }
 
-  chats(cursor?: string | null): Promise<ChatPage> {
-    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-    return this.request<ChatPage>(`/api/chats${query}`);
+  chats(
+    cursor?: string | null,
+    filter?: { archived?: boolean; folderId?: string; tagId?: string },
+  ): Promise<ChatPage> {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (filter?.archived) params.set("archived", "true");
+    if (filter?.folderId) params.set("folder", filter.folderId);
+    if (filter?.tagId) params.set("tag", filter.tagId);
+    const query = params.toString();
+    return this.request<ChatPage>(`/api/chats${query ? `?${query}` : ""}`);
   }
 
   chat(id: string, branch?: string): Promise<Chat> {
@@ -315,15 +333,145 @@ export class ApiClient {
     );
   }
 
-  createChat(title: string, modelRef: string | null): Promise<{ id: string; title: string }> {
+  createChat(
+    title: string,
+    modelRef: string | null,
+    customModelId?: string | null,
+  ): Promise<{ id: string; title: string; custom_model_id: string | null }> {
     return this.request("/api/chats", {
       method: "POST",
-      body: JSON.stringify({ title, model_ref: modelRef }),
+      body: JSON.stringify({ title, model_ref: modelRef, custom_model_id: customModelId ?? null }),
     });
+  }
+
+  /** Rename, pin, archive or move a conversation. Only the given fields are patched. */
+  updateChat(
+    id: string,
+    patch: { title?: string; pinned?: boolean; archived?: boolean; folder_id?: string | null },
+  ): Promise<Chat> {
+    return this.#json("PATCH", `/api/chats/${id}`, patch);
   }
 
   deleteChat(id: string): Promise<void> {
     return this.request<void>(`/api/chats/${id}`, { method: "DELETE" });
+  }
+
+  // --- folders -------------------------------------------------------------------
+
+  folders(): Promise<Folder[]> {
+    return this.request<Folder[]>("/api/folders");
+  }
+
+  createFolder(name: string, parentId?: string | null): Promise<Folder> {
+    return this.#json("POST", "/api/folders", { name, parent_id: parentId ?? null });
+  }
+
+  renameFolder(id: string, name: string): Promise<Folder> {
+    return this.#json("PATCH", `/api/folders/${id}`, { name });
+  }
+
+  moveFolder(id: string, parentId: string | null, sortOrder?: number): Promise<Folder> {
+    return this.#json("PUT", `/api/folders/${id}/move`, {
+      parent_id: parentId,
+      sort_order: sortOrder ?? null,
+    });
+  }
+
+  deleteFolder(id: string): Promise<void> {
+    return this.request<void>(`/api/folders/${id}`, { method: "DELETE" });
+  }
+
+  // --- tags ------------------------------------------------------------------
+
+  tags(): Promise<Tag[]> {
+    return this.request<Tag[]>("/api/tags");
+  }
+
+  createTag(name: string, color?: string | null): Promise<Tag> {
+    return this.#json("POST", "/api/tags", { name, color: color ?? null });
+  }
+
+  deleteTag(id: string): Promise<void> {
+    return this.request<void>(`/api/tags/${id}`, { method: "DELETE" });
+  }
+
+  attachTag(tagId: string, chatId: string): Promise<void> {
+    return this.request<void>(`/api/tags/${tagId}/chats/${chatId}`, { method: "PUT" });
+  }
+
+  detachTag(tagId: string, chatId: string): Promise<void> {
+    return this.request<void>(`/api/tags/${tagId}/chats/${chatId}`, { method: "DELETE" });
+  }
+
+  tagsForChat(chatId: string): Promise<Tag[]> {
+    return this.request<Tag[]>(`/api/tags/for-chat/${chatId}`);
+  }
+
+  // --- search ----------------------------------------------------------------
+
+  search(query: string, cursor?: string | null): Promise<SearchResult> {
+    const params = new URLSearchParams({ q: query });
+    if (cursor) params.set("cursor", cursor);
+    return this.request<SearchResult>(`/api/search?${params.toString()}`);
+  }
+
+  // --- custom models -----------------------------------------------------------
+
+  customModels(): Promise<CustomModel[]> {
+    return this.request<CustomModel[]>("/api/custom-models");
+  }
+
+  createCustomModel(body: {
+    slug: string;
+    name: string;
+    description?: string | null;
+    system_prompt?: string | null;
+    params?: Record<string, ParamValue> | null;
+    fallback_chain?: FallbackEntry[];
+    visibility?: CustomModelVisibility;
+  }): Promise<CustomModel> {
+    return this.#json("POST", "/api/custom-models", body);
+  }
+
+  updateCustomModel(
+    id: string,
+    patch: {
+      name?: string;
+      description?: string | null;
+      system_prompt?: string | null;
+      params?: Record<string, ParamValue> | null;
+      fallback_chain?: FallbackEntry[];
+      visibility?: CustomModelVisibility;
+    },
+  ): Promise<CustomModel> {
+    return this.#json("PATCH", `/api/custom-models/${id}`, patch);
+  }
+
+  deleteCustomModel(id: string): Promise<void> {
+    return this.request<void>(`/api/custom-models/${id}`, { method: "DELETE" });
+  }
+
+  // --- admin -------------------------------------------------------------------
+
+  adminUsers(cursor?: string | null): Promise<AdminUserPage> {
+    const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    return this.request<AdminUserPage>(`/api/admin/users${query}`);
+  }
+
+  adminCreateUser(email: string, password: string, name: string, role: UserRole): Promise<AdminUser> {
+    return this.#json("POST", "/api/admin/users", { email, password, name, role });
+  }
+
+  adminSetRole(id: string, role: UserRole): Promise<AdminUser> {
+    return this.#json("PATCH", `/api/admin/users/${id}/role`, { role });
+  }
+
+  adminSetStatus(id: string, status: UserStatus): Promise<AdminUser> {
+    return this.#json("PATCH", `/api/admin/users/${id}/status`, { status });
+  }
+
+  adminDeleteUser(id: string): Promise<void> {
+    return this.request<void>(`/api/admin/users/${id}`, { method: "DELETE" });
   }
 }
 

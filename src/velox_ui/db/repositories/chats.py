@@ -23,7 +23,7 @@ from sqlalchemy import CursorResult, Select, literal, or_, select, tuple_, updat
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from velox_ui.clock import now_ms
-from velox_ui.db.models import Chat, Message
+from velox_ui.db.models import Chat, ChatTag, Message
 from velox_ui.ids import new_ulid
 
 __all__ = ["ChatCursor", "ChatListPage", "ChatRepository", "ChatSummary", "MessageNode"]
@@ -122,6 +122,7 @@ class ChatRepository:
         title: str,
         folder_id: str | None = None,
         model_ref: str | None = None,
+        custom_model_id: str | None = None,
     ) -> Chat:
         """Create an empty conversation."""
         moment = now_ms()
@@ -132,6 +133,7 @@ class ChatRepository:
             title=title,
             active_leaf_id=None,
             model_ref=model_ref,
+            custom_model_id=custom_model_id,
             pinned=False,
             archived=False,
             message_count=0,
@@ -155,7 +157,7 @@ class ChatRepository:
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
     def _list_statement(
-        self, *, user_id: str, archived: bool, folder_id: str | None
+        self, *, user_id: str, archived: bool, folder_id: str | None, tag_id: str | None
     ) -> Select[Any]:
         """Build the base listing query, matching ``ix_chat_list`` column for column."""
         stmt = (
@@ -169,6 +171,12 @@ class ChatRepository:
         )
         if folder_id is not None:
             stmt = stmt.where(Chat.folder_id == folder_id)
+        if tag_id is not None:
+            # Seeks ix_chat_tag_tag(tag_id, chat_id) to intersect with the chat list
+            # rather than joining every tagged chat's full row.
+            stmt = stmt.where(
+                Chat.id.in_(select(ChatTag.chat_id).where(ChatTag.tag_id == tag_id))
+            )
         return stmt
 
     async def list_page(
@@ -179,6 +187,7 @@ class ChatRepository:
         cursor: ChatCursor | None = None,
         archived: bool = False,
         folder_id: str | None = None,
+        tag_id: str | None = None,
     ) -> tuple[Sequence[ChatSummary], ChatCursor | None]:
         """Return one page of chat summaries.
 
@@ -188,6 +197,7 @@ class ChatRepository:
             cursor: Ordering tuple of the last row of the previous page, or ``None``.
             archived: Which shelf to list.
             folder_id: Restrict to one folder.
+            tag_id: Restrict to chats carrying one tag.
 
         Returns:
             The page and the ordering tuple to pass back as the next cursor, or
@@ -197,7 +207,9 @@ class ChatRepository:
         of ``OR``s: every ordering column is descending, so one row-value comparison is
         both correct and the form the index can seek on directly.
         """
-        stmt = self._list_statement(user_id=user_id, archived=archived, folder_id=folder_id)
+        stmt = self._list_statement(
+            user_id=user_id, archived=archived, folder_id=folder_id, tag_id=tag_id
+        )
         if cursor is not None:
             pinned, updated_at, chat_id = cursor
             stmt = stmt.where(
@@ -514,5 +526,46 @@ class ChatRepository:
             update(Chat)
             .where(Chat.id == chat_id, Chat.user_id == user_id, Chat.deleted_at.is_(None))
             .values(deleted_at=now_ms(), updated_at=now_ms())
+        )
+        return bool(cast(CursorResult[Any], result).rowcount)
+
+    async def set_organization(
+        self,
+        chat_id: str,
+        *,
+        user_id: str,
+        title: str | None = None,
+        pinned: bool | None = None,
+        archived: bool | None = None,
+        folder_id: str | msgspec.UnsetType | None = msgspec.UNSET,
+    ) -> bool:
+        """Patch a conversation's sidebar-facing fields.
+
+        Args:
+            chat_id: The conversation.
+            user_id: Owner, enforced in the ``WHERE`` clause.
+            title: New title, if renaming.
+            pinned: New pinned state.
+            archived: New archived state.
+            folder_id: New folder, or ``None`` to move to the root. Left unset when
+                the caller does not want to touch it, since ``None`` is itself a
+                meaningful value here.
+
+        Returns:
+            Whether a row was updated.
+        """
+        values: dict[str, Any] = {"updated_at": now_ms()}
+        if title is not None:
+            values["title"] = title
+        if pinned is not None:
+            values["pinned"] = pinned
+        if archived is not None:
+            values["archived"] = archived
+        if folder_id is not msgspec.UNSET:
+            values["folder_id"] = folder_id
+        result = await self._session.execute(
+            update(Chat)
+            .where(Chat.id == chat_id, Chat.user_id == user_id, Chat.deleted_at.is_(None))
+            .values(**values)
         )
         return bool(cast(CursorResult[Any], result).rowcount)

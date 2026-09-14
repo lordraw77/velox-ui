@@ -31,6 +31,19 @@ class CreateChat(msgspec.Struct):
     title: str = "New conversation"
     folder_id: str | None = None
     model_ref: str | None = None
+    custom_model_id: str | None = None
+
+
+class UpdateChat(msgspec.Struct):
+    """Body for patching a conversation's sidebar-facing fields.
+
+    Every field is optional; only the ones present in the JSON body are applied.
+    """
+
+    title: str | msgspec.UnsetType = msgspec.UNSET
+    pinned: bool | msgspec.UnsetType = msgspec.UNSET
+    archived: bool | msgspec.UnsetType = msgspec.UNSET
+    folder_id: str | msgspec.UnsetType | None = msgspec.UNSET
 
 
 class CompletionRequest(msgspec.Struct):
@@ -53,6 +66,7 @@ async def create_chat(request: Request, principal: CurrentPrincipal, state: Stat
             title=body.title,
             folder_id=body.folder_id,
             model_ref=body.model_ref,
+            custom_model_id=body.custom_model_id,
         )
         await session.flush()
         payload = {
@@ -60,6 +74,7 @@ async def create_chat(request: Request, principal: CurrentPrincipal, state: Stat
             "title": chat.title,
             "folder_id": chat.folder_id,
             "model_ref": chat.model_ref,
+            "custom_model_id": chat.custom_model_id,
             "created_at": chat.created_at,
         }
     return json_response(payload, status_code=201)
@@ -73,6 +88,7 @@ async def list_chats(
     limit: Annotated[int | None, Query()] = None,
     archived: Annotated[bool, Query()] = False,
     folder: Annotated[str | None, Query()] = None,
+    tag: Annotated[str | None, Query()] = None,
 ) -> Response:
     """Return one keyset page of the sidebar (ADR-0007)."""
     decoded = decode_cursor(cursor, arity=3) if cursor else None
@@ -83,6 +99,7 @@ async def list_chats(
             cursor=decoded,
             archived=archived,
             folder_id=folder,
+            tag_id=tag,
         )
     return json_response(
         {
@@ -141,6 +158,7 @@ async def get_chat(
             "title": chat.title,
             "folder_id": chat.folder_id,
             "model_ref": chat.model_ref,
+            "custom_model_id": chat.custom_model_id,
             "pinned": bool(chat.pinned),
             "archived": bool(chat.archived),
             "active_leaf_id": chat.active_leaf_id,
@@ -193,6 +211,46 @@ def _message_limit(limit: int | None) -> int:
     if limit is None:
         return MESSAGE_PAGE_DEFAULT
     return max(1, min(limit, MESSAGE_PAGE_MAX))
+
+
+@router.patch("/{chat_id}", summary="Rename, pin, archive or move a conversation")
+async def update_chat(
+    chat_id: str, request: Request, principal: CurrentPrincipal, state: State
+) -> Response:
+    """Patch a conversation's sidebar-facing fields.
+
+    Every field in the body is optional; a field absent from the JSON stays
+    untouched, and ``folder_id: null`` moves the conversation to the root (distinct
+    from omitting it).
+
+    Raises:
+        NotFoundError: If it is not the caller's, or does not exist.
+    """
+    body = await read_struct(request, UpdateChat)
+    async with state.db.write() as session:
+        updated = await ChatRepository(session).set_organization(
+            chat_id,
+            user_id=principal.user_id,
+            title=None if body.title is msgspec.UNSET else body.title,
+            pinned=None if body.pinned is msgspec.UNSET else body.pinned,
+            archived=None if body.archived is msgspec.UNSET else body.archived,
+            folder_id=body.folder_id,
+        )
+        if not updated:
+            raise NotFoundError("No such conversation.")
+        chat = await ChatRepository(session).get(chat_id, user_id=principal.user_id)
+        assert chat is not None  # noqa: S101 - just updated in this transaction
+        payload = {
+            "id": chat.id,
+            "title": chat.title,
+            "folder_id": chat.folder_id,
+            "model_ref": chat.model_ref,
+            "custom_model_id": chat.custom_model_id,
+            "pinned": bool(chat.pinned),
+            "archived": bool(chat.archived),
+            "updated_at": chat.updated_at,
+        }
+    return json_response(payload)
 
 
 @router.delete("/{chat_id}", status_code=204, summary="Delete a conversation")

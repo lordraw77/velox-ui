@@ -287,12 +287,26 @@ CREATE TABLE share_link (
 
 ### Full-text search
 
-- SQLite: `message_fts` external-content FTS5 table over `message.content`, kept in
-  sync by triggers, plus a `chat_fts` over titles. Search joins back on rowid.
-- Postgres: a `tsv tsvector` generated column on `message` with a GIN index.
+**Implemented in phase 6** (migration `9f1c6a2d7b4e`).
 
-The repository exposes one `search(user_id, query, cursor)` API; the dialect
-implementation lives in `db/fts/`.
+- SQLite: `message_fts` external-content FTS5 table over `message.content`, kept in
+  sync by triggers, plus a `chat_fts` over `chat.title`. Both join back on the
+  table's own implicit `rowid` (`content_rowid='rowid'`), not the ULID `id`, which is
+  how an external-content FTS5 table bridges to a table keyed by a non-integer
+  primary key.
+- Postgres: a `tsv tsvector` column on `message` and `chat`, kept current by a
+  `BEFORE INSERT OR UPDATE` trigger (not a generated column, so the same migration
+  applies to already-populated tables without a full rewrite), with a GIN index.
+
+The repository exposes one `SearchRepository.search(user_id, query, cursor)` method
+(`db/repositories/search.py`); each dialect's query is a separate prepared statement
+selected by `Database.is_sqlite`, merged and re-paginated in Python. Results are
+ordered by recency (`created_at` descending, then id) rather than by relevance score:
+SQLite's `bm25()` and PostgreSQL's `ts_rank()` are not comparable, and a shared,
+dialect-neutral ordering key is what makes the keyset cursor work identically on both
+— a deliberate trade-off, not an oversight (see the phase 6 report for the reasoning).
+Search covers both message content and chat titles; a hit's `kind` field tells the
+client which.
 
 ## Files and RAG
 

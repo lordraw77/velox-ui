@@ -7,14 +7,16 @@ with Open WebUI, built for latency and a small footprint.
 loading a model is reported as its own state rather than as a timeout, and a host that
 is switched off degrades to an offline badge instead of an error.
 
-> **Status: phase 3 of 10.** There is a working product: configuration, database,
-> authentication, the conversation tree, the provider abstraction with complete Ollama
-> and llama.cpp adapters, and a web interface with streaming, virtual scrolling,
-> markdown and per-reply speed metrics. Verified in a real browser against a real
-> Ollama host. Still to come: local model management from the UI (phase 4), cloud
-> providers (5), search and multi-user (6), RAG (7), tools and MCP (8). The plan is in
-> [docs/design/00-overview.md](docs/design/00-overview.md); nothing below is claimed to
-> work unless it is marked as shipped.
+> **Status: phase 6 of 10.** There is a working product: configuration, database,
+> authentication, the conversation tree, the provider abstraction with local (Ollama,
+> llama.cpp) and cloud (Groq, OpenRouter, Mistral, NVIDIA, Cloudflare, Gemini,
+> Anthropic, OpenAI) adapters, local model management, a web interface with streaming,
+> virtual scrolling, markdown and per-reply speed metrics, and now organization
+> (folders, tags, pin/archive), full-text search, custom model presets and an admin
+> user console. Verified in a real browser against a real Ollama host. Still to come:
+> RAG (7), tools and MCP (8), Open WebUI import (9), plugins and packaging (10). The
+> plan is in [docs/design/00-overview.md](docs/design/00-overview.md); nothing below is
+> claimed to work unless it is marked as shipped.
 
 ## Quickstart
 

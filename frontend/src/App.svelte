@@ -21,7 +21,7 @@
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
 
-  type View = "chat" | "models" | "providers";
+  type View = "chat" | "search" | "models" | "providers" | "custom-models" | "admin";
 
   let view = $state<View>("chat");
   let lastSent = $state<string | null>(null);
@@ -32,6 +32,12 @@
       view = "models";
     } else if (hash.startsWith("#/providers")) {
       view = "providers";
+    } else if (hash.startsWith("#/search")) {
+      view = "search";
+    } else if (hash.startsWith("#/custom-models")) {
+      view = "custom-models";
+    } else if (hash.startsWith("#/admin")) {
+      view = app.isAdmin ? "admin" : "chat";
     } else {
       view = "chat";
       const id = hash.replace(/^#\/?chat\//, "");
@@ -56,7 +62,7 @@
     void conversation.open(id);
   }
 
-  function navigate(target: "models" | "providers"): void {
+  function navigate(target: Exclude<View, "chat">): void {
     location.hash = `#/${target}`;
   }
 
@@ -94,6 +100,18 @@
       {:else if view === "providers"}
         {#await import("$lib/components/ProvidersPanel.svelte") then { default: ProvidersPanel }}
           <ProvidersPanel />
+        {/await}
+      {:else if view === "search"}
+        {#await import("$lib/components/SearchPanel.svelte") then { default: SearchPanel }}
+          <SearchPanel onopen={select} />
+        {/await}
+      {:else if view === "custom-models"}
+        {#await import("$lib/components/CustomModelsPanel.svelte") then { default: CustomModelsPanel }}
+          <CustomModelsPanel onstart={() => (view = "chat")} />
+        {/await}
+      {:else if view === "admin"}
+        {#await import("$lib/components/AdminPanel.svelte") then { default: AdminPanel }}
+          <AdminPanel />
         {/await}
       {:else}
         {#if app.paramsOpen && app.model}

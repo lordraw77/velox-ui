@@ -19,10 +19,26 @@
 
 import { api } from "$lib/api/client";
 import { readSse } from "$lib/api/sse";
-import type { ApiError, Chat, Message, StartEvent, StreamPhase, UsageEvent } from "$lib/api/types";
+import type {
+  ApiError,
+  Chat,
+  CustomModel,
+  Message,
+  ParamValue,
+  StartEvent,
+  StreamPhase,
+  UsageEvent,
+} from "$lib/api/types";
 import { markdown } from "$lib/markdown/client";
 import { TokenSink } from "$lib/stream/sink";
 import { app } from "./app.svelte";
+
+/** A custom model chosen to start the next conversation, applied on its first turn. */
+interface PendingCustomModel {
+  id: string;
+  systemPrompt: string | null;
+  params: Record<string, ParamValue> | null;
+}
 
 /** How often a streaming message's markdown is re-rendered, in milliseconds. */
 const MARKDOWN_INTERVAL_MS = 180;
@@ -68,6 +84,7 @@ class ConversationStore {
   #controller: AbortController | null = null;
   #sink: TokenSink | null = null;
   #lastMarkdownAt = 0;
+  #pendingCustomModel: PendingCustomModel | null = null;
 
   get isEmpty(): boolean {
     return this.messages.length === 0;
@@ -102,6 +119,20 @@ class ConversationStore {
     this.olderCursor = null;
     this.usage = null;
     this.streamError = null;
+    this.#pendingCustomModel = null;
+  }
+
+  /**
+   * Start a fresh conversation from a custom model: its system prompt and parameter
+   * overrides are applied to the first turn, the moment the chat is actually created.
+   */
+  startFromCustomModel(model: CustomModel): void {
+    this.reset();
+    this.#pendingCustomModel = {
+      id: model.id,
+      systemPrompt: model.system_prompt,
+      params: model.params,
+    };
   }
 
   /**
@@ -160,13 +191,21 @@ class ConversationStore {
     if (!modelRef || this.streaming) return;
 
     let chatId = this.id;
+    // Carried only into the turn that creates the chat: after that, the normal
+    // per-model saved parameters (ParamsPanel) take over, same as any other chat.
+    const startingModel = chatId === null ? this.#pendingCustomModel : null;
     if (chatId === null) {
       // A conversation is created on first send, not when the composer is focused, so
       // an abandoned draft leaves nothing behind.
-      const created = await api.createChat(content.slice(0, 80) || app.t("chat.untitled"), modelRef);
+      const created = await api.createChat(
+        content.slice(0, 80) || app.t("chat.untitled"),
+        modelRef,
+        startingModel?.id,
+      );
       chatId = created.id;
       this.id = created.id;
       this.title = created.title;
+      this.#pendingCustomModel = null;
       await app.loadChats(true);
     }
 
@@ -190,7 +229,13 @@ class ConversationStore {
     try {
       const response = await api.stream(
         `/api/chats/${chatId}/completions`,
-        { content, model_ref: modelRef, parent_id: parentId ?? null },
+        {
+          content,
+          model_ref: modelRef,
+          parent_id: parentId ?? null,
+          system_prompt: startingModel?.systemPrompt ?? undefined,
+          params: startingModel?.params ?? undefined,
+        },
         this.#controller.signal,
       );
 

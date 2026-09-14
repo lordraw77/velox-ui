@@ -26,7 +26,20 @@ from starlette.middleware.cors import CORSMiddleware
 
 from velox_ui import __version__
 from velox_ui.api.middleware import MetricsMiddleware, RequestContextMiddleware
-from velox_ui.api.routes import apikeys, auth, chats, local_models, models, providers, system
+from velox_ui.api.routes import (
+    admin,
+    apikeys,
+    auth,
+    chats,
+    custom_models,
+    folders,
+    local_models,
+    models,
+    providers,
+    search,
+    system,
+    tags,
+)
 from velox_ui.api.security_headers import SecurityHeadersMiddleware
 from velox_ui.api.static_files import mount_frontend
 from velox_ui.errors import ErrorCode, VeloxError
@@ -96,6 +109,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(providers.router)
     app.include_router(local_models.router)
     app.include_router(local_models.jobs_router)
+    app.include_router(folders.router)
+    app.include_router(tags.router)
+    app.include_router(search.router)
+    app.include_router(custom_models.router)
+    app.include_router(admin.router)
 
     # Last, so the single-page fallback cannot shadow an API route.
     mount_frontend(app)

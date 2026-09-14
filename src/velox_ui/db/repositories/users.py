@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select, update
+from collections.abc import Sequence
+from typing import cast
+
+from sqlalchemy import CursorResult, delete, func, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from velox_ui.clock import now_ms
@@ -107,3 +110,46 @@ class UserRepository:
         await self._session.execute(
             update(AppUser).where(AppUser.id == user_id).values(last_seen_at=now_ms())
         )
+
+    async def list_page(
+        self, *, limit: int, cursor: tuple[int, str] | None = None
+    ) -> tuple[Sequence[AppUser], tuple[int, str] | None]:
+        """Return one keyset page of accounts, newest first, for the admin console.
+
+        Args:
+            limit: Page size, already clamped by the route.
+            cursor: ``(created_at, id)`` of the last row of the previous page.
+
+        Returns:
+            The page and the cursor for the next one, or ``None`` when exhausted.
+        """
+        stmt = select(AppUser).order_by(AppUser.created_at.desc(), AppUser.id.desc())
+        if cursor is not None:
+            created_at, user_id = cursor
+            stmt = stmt.where(tuple_(AppUser.created_at, AppUser.id) < (created_at, user_id))
+        rows = (await self._session.execute(stmt.limit(limit + 1))).scalars().all()
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        if not has_more or not page:
+            return page, None
+        last = page[-1]
+        return page, (last.created_at, last.id)
+
+    async def set_role(self, user_id: str, *, role: str) -> bool:
+        """Change an account's role. Returns whether a row was updated."""
+        result = await self._session.execute(
+            update(AppUser).where(AppUser.id == user_id).values(role=role)
+        )
+        return bool(cast(CursorResult[object], result).rowcount)
+
+    async def set_status(self, user_id: str, *, status: str) -> bool:
+        """Change an account's status. Returns whether a row was updated."""
+        result = await self._session.execute(
+            update(AppUser).where(AppUser.id == user_id).values(status=status)
+        )
+        return bool(cast(CursorResult[object], result).rowcount)
+
+    async def delete(self, user_id: str) -> bool:
+        """Delete an account and everything owned by it, via cascading foreign keys."""
+        result = await self._session.execute(delete(AppUser).where(AppUser.id == user_id))
+        return bool(cast(CursorResult[object], result).rowcount)

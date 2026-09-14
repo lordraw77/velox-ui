@@ -64,7 +64,9 @@ Each phase ends working, tested and benchmarked before the next begins.
    OpenAI — each with contract tests.~~ **Done** — seven of the eight speak the OpenAI
    protocol and are presets over the phase-4 adapter; Anthropic is a second dedicated
    adapter ([ADR-0018](../adr/0018-anthropic-dedicated-adapter.md)).
-6. Organization, search, custom models, full multi-user.
+6. ~~Organization, search, custom models, full multi-user.~~ **Done** — folders, tags,
+   pin/archive, FTS5/tsvector search, custom model presets and an admin user console,
+   all with keyset-paginated, dialect-neutral queries.
 7. RAG.
 8. MCP and tool calling.
 9. Open WebUI import.

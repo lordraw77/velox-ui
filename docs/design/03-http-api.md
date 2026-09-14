@@ -30,10 +30,13 @@ Legend: **A** = admin only, **P** = public (no auth), **S** = streaming.
 | GET/PATCH | `/api/me` | profile + UI settings |
 | GET/POST | `/api/me/api-keys` | key is returned once, on creation |
 | DELETE | `/api/me/api-keys/{id}` | |
-| GET/POST/PATCH/DELETE | `/api/admin/users…` | **A** |
-| GET/PUT | `/api/admin/settings` | **A** runtime settings in `setting` |
-| GET/PUT | `/api/admin/access-rules` | **A** provider/model permissions |
-| GET | `/api/admin/usage` | **A** usage and cost aggregates |
+| GET/POST | `/api/admin/users` | **A** phase 6: keyset list (`?cursor=&limit=`); create bypasses `open_registration` |
+| PATCH | `/api/admin/users/{id}/role` | **A** phase 6; refuses to demote the caller's own account |
+| PATCH | `/api/admin/users/{id}/status` | **A** phase 6; refuses to disable the caller's own account |
+| DELETE | `/api/admin/users/{id}` | **A** phase 6; refuses to delete the caller's own account |
+| GET/PUT | `/api/admin/settings` | **A** runtime settings in `setting` — not yet implemented |
+| GET/PUT | `/api/admin/access-rules` | **A** provider/model permissions — not yet implemented |
+| GET | `/api/admin/usage` | **A** usage and cost aggregates — not yet implemented |
 
 ## Providers and models
 
@@ -80,10 +83,11 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/chats` | keyset: `?cursor=&limit=&folder=&tag=&archived=` |
-| POST | `/api/chats` | |
+| GET | `/api/chats` | keyset: `?cursor=&limit=&folder=&tag=&archived=` (`tag` filter: **phase 6**) |
+| POST | `/api/chats` | `custom_model_id` (**phase 6**): the client applies its system prompt and params to the creating turn |
 | GET | `/api/chats/{id}` | the newest page of the active branch + `messages_cursor`; `?branch=&limit=` |
-| PATCH/DELETE | `/api/chats/{id}` | rename, pin, archive, move, soft delete |
+| PATCH | `/api/chats/{id}` | **phase 6**: rename, pin, archive, move — only the fields present in the body are touched |
+| DELETE | `/api/chats/{id}` | soft delete |
 | GET | `/api/chats/{id}/branch/{message_id}` | switch the active branch |
 | GET | `/api/chats/{id}/messages` | older pages: `?cursor=&limit=`, oldest first, explicit columns |
 | POST | `/api/chats/{id}/completions` | **S** the hot path (see below) |
@@ -94,9 +98,14 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 | POST | `/api/chats/{id}/title` | regenerate the auto-title |
 | GET | `/api/chats/{id}/export` | JSON export |
 | POST | `/api/chats/import` | idempotent by chat id |
-| GET | `/api/search?q=&cursor=` | FTS over titles and messages |
+| GET | `/api/search?q=&cursor=` | **phase 6** FTS over titles and messages, dialect-neutral (see 02-db-schema.md) |
 | POST | `/api/compare` | **S** one prompt, N models, multiplexed stream |
-| GET/POST/PATCH/DELETE | `/api/folders…`, `/api/tags…` | |
+| GET/POST | `/api/folders` | **phase 6** flat list; nesting via `parent_id` |
+| PATCH/PUT/DELETE | `/api/folders/{id}`, `/api/folders/{id}/move` | **phase 6** rename; reparent + reorder; delete (children cascade, chats detach) |
+| GET/POST | `/api/tags` | **phase 6** |
+| PATCH/DELETE | `/api/tags/{id}` | **phase 6** |
+| PUT/DELETE | `/api/tags/{id}/chats/{chat_id}` | **phase 6** attach / detach, idempotent |
+| GET | `/api/tags/{id}/chats`, `/api/tags/for-chat/{id}` | **phase 6** |
 | POST | `/api/chats/{id}/share` | create a link |
 | GET | `/api/share/{token}` | **P** read-only rendering |
 
@@ -133,10 +142,16 @@ message `stopped`; `POST /stop` does the same from another tab.
 
 ## Custom models and prompts
 
-| Method | Path |
-|---|---|
-| GET/POST/PATCH/DELETE | `/api/custom-models…` |
-| GET/POST/PATCH/DELETE | `/api/prompts…` |
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/custom-models` | **phase 6** the caller's own, plus `shared`/`public` ones |
+| POST | `/api/custom-models` | **phase 6** slug must be unique |
+| GET/PATCH/DELETE | `/api/custom-models/{id}` | **phase 6** a private model owned by someone else answers 403/404 |
+| GET/POST/PATCH/DELETE | `/api/prompts…` | not yet implemented |
+
+`tools`, `knowledge_ids` and `fallback_chain` are carried on `custom_model` for phases
+8 (MCP) and 7 (RAG); phase 6 writes `tools`/`knowledge_ids` as `null` and does not act
+on them.
 
 ## Files and RAG
 

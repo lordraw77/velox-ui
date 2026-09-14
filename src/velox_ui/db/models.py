@@ -28,6 +28,7 @@ __all__ = [
     "Base",
     "Chat",
     "ChatTag",
+    "CustomModel",
     "Folder",
     "Message",
     "ModelParams",
@@ -235,6 +236,38 @@ class Setting(Base):
     updated_at: Mapped[Timestamp]
 
 
+class CustomModel(Base):
+    """A user-defined model preset (persona).
+
+    Binds a system prompt and parameters to a slug, so a chat can be started from it
+    directly.
+
+    ``tools``, ``knowledge_ids`` and ``fallback_chain`` are carried for phases 7 and 8
+    (RAG and MCP); phase 6 writes them as empty/null and nothing yet reads them.
+    """
+
+    __tablename__ = "custom_model"
+
+    id: Mapped[UlidPk]
+    owner_id: Mapped[UlidRef | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE")
+    )
+    slug: Mapped[str] = shortstr(200)
+    name: Mapped[str] = shortstr(200)
+    description: Mapped[str | None] = longtext()
+    avatar_url: Mapped[str | None] = shortstr(1024)
+    system_prompt: Mapped[str | None] = longtext()
+    params: Mapped[Json | None]
+    tools: Mapped[Json | None]
+    knowledge_ids: Mapped[Json | None]
+    fallback_chain: Mapped[Json]
+    visibility: Mapped[str] = shortstr(16)
+    created_at: Mapped[Timestamp]
+    updated_at: Mapped[Timestamp]
+
+    __table_args__ = (UniqueConstraint("slug", name="uq_custom_model_slug"),)
+
+
 class Folder(Base):
     """A folder in the chat sidebar. Folders nest."""
 
@@ -266,6 +299,9 @@ class Chat(Base):
     title: Mapped[str] = shortstr(500)
     active_leaf_id: Mapped[UlidRef | None]
     model_ref: Mapped[str | None] = shortstr(255)
+    custom_model_id: Mapped[str | None] = mapped_column(
+        ForeignKey("custom_model.id", ondelete="SET NULL")
+    )
     pinned: Mapped[BoolInt] = mapped_column(default=False)
     archived: Mapped[BoolInt] = mapped_column(default=False)
     message_count: Mapped[int] = mapped_column(Integer, default=0)

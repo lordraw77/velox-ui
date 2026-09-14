@@ -264,3 +264,71 @@ export interface StartEvent {
   parent_id: string | null;
   model_ref: string;
 }
+
+export interface Folder {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  sort_order: number;
+  created_at: number;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+export interface SearchHit {
+  kind: "message" | "chat_title";
+  chat_id: string;
+  chat_title: string;
+  message_id: string | null;
+  snippet: string;
+  created_at: number;
+}
+
+export interface SearchResult {
+  items: SearchHit[];
+  next_cursor: string | null;
+}
+
+export interface FallbackEntry {
+  provider_id: string;
+  model_key: string;
+}
+
+export type CustomModelVisibility = "private" | "shared" | "public";
+
+export interface CustomModel {
+  id: string;
+  owner_id: string | null;
+  slug: string;
+  name: string;
+  description: string | null;
+  avatar_url: string | null;
+  system_prompt: string | null;
+  params: Record<string, ParamValue> | null;
+  fallback_chain: FallbackEntry[];
+  visibility: CustomModelVisibility;
+  created_at: number;
+  updated_at: number;
+}
+
+export type UserRole = "admin" | "user";
+export type UserStatus = "active" | "pending" | "disabled";
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  status: UserStatus;
+  created_at: number;
+  last_seen_at: number | null;
+}
+
+export interface AdminUserPage {
+  items: AdminUser[];
+  next_cursor: string | null;
+}

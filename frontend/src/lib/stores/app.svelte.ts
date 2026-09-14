@@ -11,7 +11,16 @@
  */
 
 import { api, VeloxApiError } from "$lib/api/client";
-import type { ApiError, ChatSummary, ClientConfig, ModelEntry, ProviderGroup, Session } from "$lib/api/types";
+import type {
+  ApiError,
+  ChatSummary,
+  ClientConfig,
+  Folder,
+  ModelEntry,
+  ProviderGroup,
+  Session,
+  Tag,
+} from "$lib/api/types";
 import { detectLocale, translate, type Locale } from "$lib/i18n";
 
 export type Theme = "light" | "dark" | "auto";
@@ -53,6 +62,12 @@ class AppStore {
   chats = $state<ChatSummary[]>([]);
   chatsCursor = $state<string | null>(null);
   chatsLoading = $state(false);
+  chatsArchived = $state(false);
+  activeFolderId = $state<string | null>(null);
+  activeTagId = $state<string | null>(null);
+
+  folders = $state<Folder[]>([]);
+  tags = $state<Tag[]>([]);
 
   error = $state<ApiError | null>(null);
   booted = $state(false);
@@ -121,9 +136,30 @@ class AppStore {
 
   /** Load everything a signed-in user needs to start: models and the chat list. */
   async loadWorkspace(): Promise<void> {
-    // Both in parallel: the sidebar and the model picker are independent, and
-    // serialising them would show an empty interface for two round trips.
-    await Promise.all([this.loadModels(), this.loadChats(true)]);
+    // All independent, so serialising them would show an empty interface for extra
+    // round trips with no benefit.
+    await Promise.all([
+      this.loadModels(),
+      this.loadChats(true),
+      this.loadFolders(),
+      this.loadTags(),
+    ]);
+  }
+
+  async loadFolders(): Promise<void> {
+    try {
+      this.folders = await api.folders();
+    } catch (error) {
+      this.report(error);
+    }
+  }
+
+  async loadTags(): Promise<void> {
+    try {
+      this.tags = await api.tags();
+    } catch (error) {
+      this.report(error);
+    }
   }
 
   async loadModels(refresh = false): Promise<void> {
@@ -155,7 +191,12 @@ class AppStore {
     if (this.chatsLoading) return;
     this.chatsLoading = true;
     try {
-      const page = await api.chats(reset ? null : this.chatsCursor);
+      const filter = {
+        archived: this.chatsArchived,
+        folderId: this.activeFolderId ?? undefined,
+        tagId: this.activeTagId ?? undefined,
+      };
+      const page = await api.chats(reset ? null : this.chatsCursor, filter);
       this.chats = reset ? page.items : [...this.chats, ...page.items];
       this.chatsCursor = page.next_cursor;
     } catch (error) {
@@ -163,6 +204,18 @@ class AppStore {
     } finally {
       this.chatsLoading = false;
     }
+  }
+
+  /** Switch which shelf, folder or tag the sidebar lists, and reload it. */
+  async setChatFilter(filter: {
+    archived?: boolean;
+    folderId?: string | null;
+    tagId?: string | null;
+  }): Promise<void> {
+    if (filter.archived !== undefined) this.chatsArchived = filter.archived;
+    if (filter.folderId !== undefined) this.activeFolderId = filter.folderId;
+    if (filter.tagId !== undefined) this.activeTagId = filter.tagId;
+    await this.loadChats(true);
   }
 
   /** Move a conversation to the top of the sidebar after it is used. */
@@ -173,6 +226,34 @@ class AppStore {
     if (!chat) return;
     const updated = { ...chat, updated_at: Date.now(), title: title ?? chat.title };
     this.chats = [updated, ...this.chats.filter((entry) => entry.id !== id)];
+  }
+
+  /** Pin, archive or move a conversation, applying the server's response locally. */
+  async patchChat(
+    id: string,
+    patch: { pinned?: boolean; archived?: boolean; folder_id?: string | null; title?: string },
+  ): Promise<void> {
+    try {
+      const updated = await api.updateChat(id, patch);
+      if (updated.archived !== this.chatsArchived) {
+        // The conversation left the shelf currently shown; drop it from the list.
+        this.chats = this.chats.filter((chat) => chat.id !== id);
+        return;
+      }
+      this.chats = this.chats.map((chat) =>
+        chat.id === id
+          ? {
+              ...chat,
+              pinned: updated.pinned,
+              archived: updated.archived,
+              folder_id: updated.folder_id,
+              title: updated.title,
+            }
+          : chat,
+      );
+    } catch (error) {
+      this.report(error);
+    }
   }
 
   async signIn(email: string, password: string): Promise<void> {
@@ -197,6 +278,8 @@ class AppStore {
     writeStored(STORAGE_KEYS.session, null);
     this.chats = [];
     this.providers = [];
+    this.folders = [];
+    this.tags = [];
   }
 
   setTheme(theme: Theme): void {
