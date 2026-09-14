@@ -390,6 +390,18 @@ CREATE TABLE mcp_server (
   created_at INTEGER NOT NULL
 );
 
+-- As implemented (phase 8): `owner_id` NULL means an instance-wide server, visible to
+-- every signed-in user, not just its creator — the same convention `provider` uses
+-- implicitly (there is no per-user provider). `config` never carries a credential;
+-- `auth_ref`, when set, is the row's own id in `secret` (ADR-0013), the same
+-- one-secret-per-row convention `provider.auth_ref` uses. `tool_cache` is a JSON array
+-- of `{name, description, input_schema}` objects, written by `POST
+-- /api/mcp/servers/{id}/connect` (mcp/manager.py) and read on the completion path
+-- without ever reconnecting to the server mid-turn. No connect/call operation gets a
+-- `job` row or an in-memory job handle: both are synchronous RPCs from the caller's
+-- point of view (a subprocess spawn or one HTTP round trip), not a long-running,
+-- progress-reporting background task like a model pull or a RAG ingest.
+
 -- No `job` table exists. ADR-0017 (model pulls) found no recoverable state worth a
 -- table: a download or an ingest is idempotent and resumable from what is already on
 -- disk, so persisting "a job was running" bought nothing a restart could not recompute.

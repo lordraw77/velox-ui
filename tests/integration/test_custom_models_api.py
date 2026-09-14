@@ -73,6 +73,27 @@ def test_create_get_update_delete(client: TestClient, registered: dict) -> None:
     assert client.get(f"/api/custom-models/{model_id}", headers=headers).status_code == 404
 
 
+def test_tools_field_round_trips(client: TestClient, registered: dict) -> None:
+    headers = _headers(registered)
+    created = client.post(
+        "/api/custom-models",
+        headers=headers,
+        json={"slug": "with-tools", "name": "With Tools", "tools": ["srv-1", "srv-2"]},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["tools"] == ["srv-1", "srv-2"]
+
+    model_id = created.json()["id"]
+    updated = client.patch(
+        f"/api/custom-models/{model_id}", headers=headers, json={"tools": ["srv-3"]}
+    )
+    assert updated.status_code == 200
+    assert updated.json()["tools"] == ["srv-3"]
+
+    fetched = client.get(f"/api/custom-models/{model_id}", headers=headers)
+    assert fetched.json()["tools"] == ["srv-3"]
+
+
 def test_invalid_slug_is_rejected(client: TestClient, registered: dict) -> None:
     headers = _headers(registered)
     response = client.post(

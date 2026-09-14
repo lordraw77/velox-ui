@@ -28,6 +28,9 @@ import type {
   ParamValue,
   StartEvent,
   StreamPhase,
+  ToolCallEvent,
+  ToolResultEvent,
+  ToolTraceEntry,
   UsageEvent,
 } from "$lib/api/types";
 import { markdown } from "$lib/markdown/client";
@@ -40,6 +43,7 @@ interface PendingCustomModel {
   systemPrompt: string | null;
   params: Record<string, ParamValue> | null;
   knowledgeIds: string[];
+  toolServerIds: string[];
 }
 
 /** How often a streaming message's markdown is re-rendered, in milliseconds. */
@@ -57,6 +61,10 @@ export interface RenderedMessage extends Message {
   showReasoning: boolean;
   /** Sources retrieved for this turn, when a knowledge collection was attached. */
   citations: CitationEvent[];
+  /** Tool calls made for this turn, in order, once they have a result (or a rejection). */
+  toolTrace: ToolTraceEntry[];
+  /** A tool call currently blocked on `POST /api/tools/approve`, if any. */
+  pendingApproval: ToolCallEvent | null;
 }
 
 function toRendered(message: Message): RenderedMessage {
@@ -67,6 +75,8 @@ function toRendered(message: Message): RenderedMessage {
     tail: message.content,
     showReasoning: false,
     citations: [],
+    toolTrace: message.meta?.tool_trace ?? [],
+    pendingApproval: null,
   };
 }
 
@@ -138,6 +148,7 @@ class ConversationStore {
       systemPrompt: model.system_prompt,
       params: model.params,
       knowledgeIds: model.knowledge_ids,
+      toolServerIds: model.tools,
     };
   }
 
@@ -231,6 +242,7 @@ class ConversationStore {
     const sink = new TokenSink();
     this.#sink = sink;
     let assistant: RenderedMessage | null = null;
+    const pendingCalls = new Map<string, ToolCallEvent>();
 
     try {
       const response = await api.stream(
@@ -242,6 +254,7 @@ class ConversationStore {
           system_prompt: startingModel?.systemPrompt ?? undefined,
           params: startingModel?.params ?? undefined,
           knowledge_ids: startingModel?.knowledgeIds ?? undefined,
+          tool_server_ids: startingModel?.toolServerIds ?? undefined,
         },
         this.#controller.signal,
       );
@@ -289,6 +302,35 @@ class ConversationStore {
               assistant.citations = [...assistant.citations, JSON.parse(event.data) as CitationEvent];
             }
             break;
+
+          case "tool_call": {
+            const call = JSON.parse(event.data) as ToolCallEvent;
+            pendingCalls.set(call.id, call);
+            if (assistant) {
+              assistant.pendingApproval = call.approval === "required" ? call : null;
+            }
+            break;
+          }
+
+          case "tool_result": {
+            const result = JSON.parse(event.data) as ToolResultEvent;
+            const call = pendingCalls.get(result.id);
+            pendingCalls.delete(result.id);
+            if (assistant) {
+              if (assistant.pendingApproval?.id === result.id) assistant.pendingApproval = null;
+              assistant.toolTrace = [
+                ...assistant.toolTrace,
+                {
+                  id: result.id,
+                  name: call?.name ?? "",
+                  args: call?.args ?? {},
+                  ok: result.ok,
+                  content: result.content,
+                },
+              ];
+            }
+            break;
+          }
 
           case "usage":
             this.usage = JSON.parse(event.data) as UsageEvent;
@@ -359,6 +401,21 @@ class ConversationStore {
     this.#sink?.flushNow();
   }
 
+  /** Approve or reject a tool call the stream is blocked on. */
+  async approveTool(messageId: string, callId: string, approved: boolean): Promise<void> {
+    const message = this.messages.find((entry) => entry.id === messageId);
+    try {
+      await api.approveToolCall(callId, approved);
+      // The stream itself clears `pendingApproval` once `tool_result` arrives; this
+      // only stops the button from being clicked twice while that is in flight.
+      if (message?.pendingApproval?.id === callId) {
+        message.pendingApproval = { ...message.pendingApproval, approval: undefined };
+      }
+    } catch (error) {
+      app.report(error);
+    }
+  }
+
   /** Re-render markdown at most every {@link MARKDOWN_INTERVAL_MS}. */
   #maybeRenderMarkdown(message: RenderedMessage): void {
     const now = performance.now();
@@ -383,6 +440,7 @@ class ConversationStore {
       cost_micros: null,
       timings: null,
       error: null,
+      meta: null,
       created_at: Date.now(),
       sibling_index: 0,
       sibling_count: 1,
@@ -391,6 +449,8 @@ class ConversationStore {
       tail: partial.content,
       showReasoning: false,
       citations: [],
+      toolTrace: [],
+      pendingApproval: null,
     };
     this.messages = [...this.messages, message];
     return this.messages.at(-1)!;

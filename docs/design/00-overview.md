@@ -73,7 +73,15 @@ Each phase ends working, tested and benchmarked before the next begins.
    custom model carries `knowledge_ids`. `POST /api/websearch` is a typed stub: no
    search-provider configuration exists elsewhere in the codebase, so it answers
    `unsupported_capability` rather than partially implementing an unbriefed feature.
-8. MCP and tool calling.
+8. ~~MCP and tool calling.~~ **Done** — stdio and Streamable HTTP MCP clients, a
+   server manager with a persisted tool cache and an approval gate
+   ([ADR-0020](../adr/0020-mcp-transport-and-tool-calling-strategy.md)), native
+   tool-calling wired into the OpenAI-compatible and Anthropic adapters, prompt-based
+   emulation for models without native support, and a bounded in-stream tool-call loop
+   in `services/chat.py`. `custom_model.tools` now selects enabled MCP servers for a
+   chat, same activation pattern as phase 7's `knowledge_ids`. No built-in
+   (non-MCP) tool ships this phase (ADR-0020); ADR-0014's plugin mechanism is the
+   documented path for adding one.
 9. Open WebUI import.
 10. Optional plugins (images, voice), packaging, documentation.
 

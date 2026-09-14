@@ -198,7 +198,11 @@ def test_probe_identifies_what_answers(
     unlocked = client.post(
         "/api/providers/probe", headers=admin, json={"base_url": keyed.base_url, "api_key": KEY}
     ).json()
-    assert unlocked["models"] == 2 and unlocked["detail"] is None
+    # The fake OpenAI-compatible server lists three models as of phase 8 (a "tools"
+    # entry was added so its capability probe can be exercised via a real /models
+    # listing); this asserts "at least the two original ones", not the exact count,
+    # so it does not re-break every time the fake's fixture roster grows.
+    assert unlocked["models"] >= 2 and unlocked["detail"] is None
 
 
 def test_editing_and_removing_a_stored_provider(

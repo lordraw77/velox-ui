@@ -68,6 +68,7 @@ class MessageNode(msgspec.Struct, frozen=True):
     cost_micros: int | None
     timings: dict[str, Any] | None
     error: dict[str, Any] | None
+    meta: dict[str, Any] | None
     created_at: int
     sibling_index: int
     sibling_count: int
@@ -98,6 +99,7 @@ _MESSAGE_COLUMNS = (
     Message.cost_micros,
     Message.timings,
     Message.error,
+    Message.meta,
     Message.created_at,
 )
 
@@ -378,6 +380,7 @@ class ChatRepository:
                     cost_micros=row.cost_micros,
                     timings=row.timings,
                     error=row.error,
+                    meta=row.meta,
                     created_at=row.created_at,
                     sibling_index=siblings.index(message_id),
                     sibling_count=len(siblings),
@@ -466,6 +469,7 @@ class ChatRepository:
                     cost_micros=row.cost_micros,
                     timings=row.timings,
                     error=row.error,
+                    meta=row.meta,
                     created_at=row.created_at,
                     sibling_index=group.index(message_id) if message_id in group else 0,
                     sibling_count=max(1, len(group)),

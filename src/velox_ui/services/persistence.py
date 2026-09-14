@@ -100,6 +100,7 @@ class StreamWriter:
         cost_micros: int | None = None,
         timings: dict[str, Any] | None = None,
         error: dict[str, Any] | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> None:
         """Write the final state of the message and bump the conversation.
 
@@ -112,6 +113,9 @@ class StreamWriter:
             cost_micros: Estimated spend in micro-cents. Zero for local models.
             timings: TTFT and generation metrics.
             error: Typed error payload when ``status`` is ``error``.
+            meta: Free-form extras, currently the tool-call trace for a turn that used
+                tools (``{"tool_trace": [...]}``), so re-opening the chat can re-render
+                the calls the live stream already showed.
         """
         async with self._lock:
             async with self._state.db.write() as session:
@@ -128,6 +132,7 @@ class StreamWriter:
                         cost_micros=cost_micros,
                         timings=timings,
                         error=error,
+                        meta=meta,
                     )
                 )
                 await session.execute(

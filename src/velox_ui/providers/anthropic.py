@@ -55,6 +55,7 @@ from velox_ui.providers.errors import (
     UnsupportedCapability,
     UpstreamError,
 )
+from velox_ui.providers.tools.translate import anthropic_tool_choice, to_anthropic_tools
 
 __all__ = ["AnthropicProvider"]
 
@@ -405,22 +406,12 @@ class AnthropicProvider:
         if request.tools and (
             request.tool_choice is None or request.tool_choice.mode != "none"
         ):
-            body["tools"] = [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.parameters,
-                }
-                for tool in request.tools
-            ]
-            if request.tool_choice is not None:
-                mode = request.tool_choice.mode
-                if mode == "required":
-                    body["tool_choice"] = {"type": "any"}
-                elif mode == "named" and request.tool_choice.name:
-                    body["tool_choice"] = {"type": "tool", "name": request.tool_choice.name}
-                elif mode == "auto":
-                    body["tool_choice"] = {"type": "auto"}
+            tools = to_anthropic_tools(request.tools)
+            if tools is not None:
+                body["tools"] = tools
+            tool_choice = anthropic_tool_choice(request.tool_choice)
+            if tool_choice is not None:
+                body["tool_choice"] = tool_choice
         return body
 
     async def _request(

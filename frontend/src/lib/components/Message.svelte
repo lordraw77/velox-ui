@@ -7,7 +7,7 @@
   after the message first appears.
 -->
 <script lang="ts">
-  import type { RenderedMessage } from "$lib/stores/conversation.svelte";
+  import { conversation, type RenderedMessage } from "$lib/stores/conversation.svelte";
   import { app } from "$lib/stores/app.svelte";
   import Markdown from "./Markdown.svelte";
   import Metrics from "./Metrics.svelte";
@@ -18,6 +18,18 @@
   }
 
   let { message, onmeasure }: Props = $props();
+  let approving = $state(false);
+
+  async function respond(approved: boolean): Promise<void> {
+    const call = message.pendingApproval;
+    if (!call || approving) return;
+    approving = true;
+    try {
+      await conversation.approveTool(message.id, call.id, approved);
+    } finally {
+      approving = false;
+    }
+  }
   let element: HTMLElement | undefined = $state();
 
   $effect(() => {
@@ -68,6 +80,43 @@
       <Markdown html={message.html} tail={message.tail} />
     {/if}
   </div>
+
+  {#if !isUser && message.toolTrace.length > 0}
+    <details class="tool-trace" open>
+      <summary>{app.t("chat.toolCalls", { count: message.toolTrace.length })}</summary>
+      <ul>
+        {#each message.toolTrace as call (call.id)}
+          <li>
+            <div class="tool-name">
+              <code>{call.name}</code>
+              <span class="badge" class:danger={!call.ok}>
+                {call.ok ? app.t("chat.toolOk") : app.t("chat.toolFailed")}
+              </span>
+            </div>
+            <pre class="tool-args">{JSON.stringify(call.args)}</pre>
+            <pre class="tool-result">{call.content}</pre>
+          </li>
+        {/each}
+      </ul>
+    </details>
+  {/if}
+
+  {#if !isUser && message.pendingApproval}
+    <div class="approval card">
+      <p>
+        {app.t("chat.approvalRequired", { name: message.pendingApproval.name })}
+      </p>
+      <pre class="tool-args">{JSON.stringify(message.pendingApproval.args)}</pre>
+      <div class="row-actions">
+        <button class="btn btn-ghost" disabled={approving} onclick={() => respond(false)} type="button">
+          {app.t("chat.reject")}
+        </button>
+        <button class="btn btn-primary" disabled={approving} onclick={() => respond(true)} type="button">
+          {app.t("chat.approve")}
+        </button>
+      </div>
+    </div>
+  {/if}
 
   {#if !isUser && message.citations.length > 0}
     <details class="citations">
@@ -164,5 +213,49 @@
     margin: 0.4rem 0 0;
     padding-left: 1.2rem;
     color: var(--text-muted);
+  }
+
+  .tool-trace {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .tool-trace summary {
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .tool-trace ul {
+    margin: 0.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .tool-name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .tool-args,
+  .tool-result {
+    margin: 0.2rem 0 0;
+    padding: 0.5rem 0.6rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    color: var(--text-muted);
+    background: var(--bg-sunken);
+    border-radius: var(--radius-sm);
+  }
+
+  .badge.danger {
+    color: var(--danger);
+  }
+
+  .approval {
+    margin-top: 0.5rem;
   }
 </style>

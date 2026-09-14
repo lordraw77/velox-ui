@@ -22,6 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; importing httpx here would
     # undo the whole point of the lazy client below.
     import httpx
 
+    from velox_ui.mcp.manager import McpManager
     from velox_ui.services.model_jobs import ModelJobs
     from velox_ui.services.model_params import ModelParamsStore
     from velox_ui.services.rag_jobs import RagJobs
@@ -46,6 +47,7 @@ class AppState:
 
     __slots__ = (
         "_http",
+        "_mcp",
         "_model_jobs",
         "_model_params",
         "_rag_jobs",
@@ -72,6 +74,7 @@ class AppState:
         self._model_jobs: ModelJobs | None = None
         self._model_params: ModelParamsStore | None = None
         self._rag_jobs: RagJobs | None = None
+        self._mcp: McpManager | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
 
     @property
@@ -100,6 +103,15 @@ class AppState:
 
             self._rag_jobs = RagJobs(self)
         return self._rag_jobs
+
+    @property
+    def mcp(self) -> McpManager:
+        """MCP server connections, tool cache and the approval gate, created on first use."""
+        if self._mcp is None:
+            from velox_ui.mcp.manager import McpManager
+
+            self._mcp = McpManager(self)
+        return self._mcp
 
     @property
     def http(self) -> httpx.AsyncClient:

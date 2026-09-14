@@ -1,10 +1,9 @@
 """Custom model (persona) repository.
 
 A custom model bundles a system prompt, sampling parameter overrides and a fallback
-chain under a slug, so a chat can be started from it directly. ``tools`` is carried
-for phase 8 (MCP) and still only ever written as ``None``. ``knowledge_ids`` — RAG
-collection ids to retrieve from before a turn — is real as of phase 7: the client
-resolves it when starting a chat from this custom model and sends it on
+chain under a slug, so a chat can be started from it directly. ``knowledge_ids`` (RAG
+collection ids, phase 7) and ``tools`` (enabled MCP server ids, phase 8) are both real:
+the client resolves them when starting a chat from this custom model and sends them on
 ``POST .../completions`` the same way it already resolves ``system_prompt``
 (``services/chat.py``).
 """
@@ -44,6 +43,7 @@ class CustomModelSummary(msgspec.Struct, frozen=True):
     system_prompt: str | None
     params: dict[str, Any] | None
     knowledge_ids: tuple[str, ...]
+    tools: tuple[str, ...]
     fallback_chain: tuple[FallbackEntry, ...]
     visibility: str
     created_at: int
@@ -63,6 +63,7 @@ def to_summary(model: CustomModel) -> CustomModelSummary:
         system_prompt=model.system_prompt,
         params=model.params,
         knowledge_ids=tuple(model.knowledge_ids or ()),
+        tools=tuple(model.tools or ()),
         fallback_chain=tuple(
             FallbackEntry(provider_id=entry["provider_id"], model_key=entry["model_key"])
             for entry in chain
@@ -97,6 +98,7 @@ class CustomModelRepository:
         system_prompt: str | None = None,
         params: dict[str, Any] | None = None,
         knowledge_ids: Sequence[str] = (),
+        tools: Sequence[str] = (),
         fallback_chain: Sequence[FallbackEntry] = (),
         visibility: str = "private",
     ) -> CustomModel:
@@ -111,7 +113,7 @@ class CustomModelRepository:
             avatar_url=avatar_url,
             system_prompt=system_prompt,
             params=params,
-            tools=None,
+            tools=list(tools) or None,
             knowledge_ids=list(knowledge_ids) or None,
             fallback_chain=[msgspec.structs.asdict(entry) for entry in fallback_chain],
             visibility=visibility,
@@ -160,6 +162,7 @@ class CustomModelRepository:
         system_prompt: str | None = None,
         params: dict[str, Any] | None = None,
         knowledge_ids: Sequence[str] | None = None,
+        tools: Sequence[str] | None = None,
         fallback_chain: Sequence[FallbackEntry] | None = None,
         visibility: str | None = None,
     ) -> bool:
@@ -177,6 +180,8 @@ class CustomModelRepository:
             values["params"] = params
         if knowledge_ids is not None:
             values["knowledge_ids"] = list(knowledge_ids) or None
+        if tools is not None:
+            values["tools"] = list(tools) or None
         if fallback_chain is not None:
             values["fallback_chain"] = [
                 msgspec.structs.asdict(entry) for entry in fallback_chain

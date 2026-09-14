@@ -34,12 +34,14 @@ from velox_ui.api.routes import (
     custom_models,
     folders,
     local_models,
+    mcp,
     models,
     providers,
     rag,
     search,
     system,
     tags,
+    tools,
 )
 from velox_ui.api.security_headers import SecurityHeadersMiddleware
 from velox_ui.api.static_files import mount_frontend
@@ -115,6 +117,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search.router)
     app.include_router(custom_models.router)
     app.include_router(rag.router)
+    app.include_router(mcp.router)
+    app.include_router(tools.router)
     app.include_router(admin.router)
 
     # Last, so the single-page fallback cannot shadow an API route.

@@ -84,6 +84,7 @@ def create_app(*, api_key: str | None = None) -> Starlette:
                         "max_model_len": 32768,
                     },
                     {"id": "text-embedding", "object": "model", "owned_by": "vllm"},
+                    {"id": "tools", "object": "model", "owned_by": "vllm"},
                 ],
             }
         )
@@ -95,6 +96,13 @@ def create_app(*, api_key: str | None = None) -> Starlette:
         requests.append(body)
         model = str(body.get("model", ""))
         include_usage = bool((body.get("stream_options") or {}).get("include_usage"))
+        # Once a tool result has come back in the conversation, the "tools" model
+        # answers normally instead of calling the tool again — enough behaviour to
+        # drive a full call -> result -> continued-generation loop in a test without
+        # this fake needing real reasoning.
+        already_has_tool_result = any(
+            message.get("role") == "tool" for message in body.get("messages", [])
+        )
 
         if model == "missing":
             return JSONResponse(
@@ -133,7 +141,12 @@ def create_app(*, api_key: str | None = None) -> Starlette:
                 field = "reasoning_content" if model == "reasoner" else "reasoning"
                 for token in REASONING:
                     yield _frame(_chunk(model, {field: token}))
-            if model == "tools":
+            if model == "tools" and not already_has_tool_result:
+                offered = body.get("tools") or []
+                # A real model picks a name from what it was offered; falling back to
+                # "get_weather" keeps this fake usable by callers that never set
+                # `tools` on the request (this file's own contract test included).
+                call_name = offered[0]["function"]["name"] if offered else "get_weather"
                 yield _frame(
                     _chunk(
                         model,
@@ -143,7 +156,7 @@ def create_app(*, api_key: str | None = None) -> Starlette:
                                     "index": 0,
                                     "id": "call_abc",
                                     "type": "function",
-                                    "function": {"name": "get_weather", "arguments": ""},
+                                    "function": {"name": call_name, "arguments": ""},
                                 }
                             ]
                         },

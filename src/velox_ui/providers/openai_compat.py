@@ -44,6 +44,7 @@ from velox_ui.providers.base import (
     TextDelta,
     Timeouts,
     ToolCallDelta,
+    ToolSupport,
     Usage,
 )
 from velox_ui.providers.errors import (
@@ -61,6 +62,7 @@ from velox_ui.providers.errors import (
     UpstreamError,
 )
 from velox_ui.providers.presets import Preset
+from velox_ui.providers.tools.translate import to_openai_tools
 
 __all__ = ["OpenAICompatProvider"]
 
@@ -170,6 +172,16 @@ class OpenAICompatProvider:
             capabilities = Capabilities(
                 context_window=_context_window(entry),
                 json_mode=True,
+                # The OpenAI protocol has no per-model "supports tools" field, and
+                # most current OpenAI-compatible servers (vLLM, TGI, LM Studio, plus
+                # every OpenAI-protocol cloud preset) accept the `tools` request field
+                # whenever the loaded model's chat template defines one; a model that
+                # cannot use it simply never emits a `tool_calls` finish reason, the
+                # same graceful ignoring this protocol already has for unsupported
+                # sampling parameters. Advertising NATIVE here is what lets
+                # ``services/chat.py`` attach tools on the request instead of falling
+                # back to the emulated, less reliable prompt-based path.
+                tools=ToolSupport.NATIVE,
             )
             self._capability_cache[key] = capabilities
             models.append(
@@ -384,18 +396,9 @@ class OpenAICompatProvider:
         if params.max_tokens is not None:
             body[self.preset.quirks.max_tokens_field] = params.max_tokens
 
-        if request.tools:
-            body["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": tool.parameters,
-                    },
-                }
-                for tool in request.tools
-            ]
+        tools = to_openai_tools(request.tools)
+        if tools is not None:
+            body["tools"] = tools
         if request.json_schema is not None:
             body["response_format"] = {
                 "type": "json_schema",

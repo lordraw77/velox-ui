@@ -55,6 +55,7 @@ class CompletionRequest(msgspec.Struct):
     system_prompt: str | None = None
     params: SamplingParams = msgspec.field(default_factory=SamplingParams)
     knowledge_ids: tuple[str, ...] = ()
+    tool_server_ids: tuple[str, ...] = ()
 
 
 @router.post("", summary="Create a conversation")
@@ -295,6 +296,7 @@ async def completions(
         params=body.params,
         system_prompt=body.system_prompt,
         knowledge_ids=body.knowledge_ids,
+        tool_server_ids=body.tool_server_ids,
     )
     return StreamingResponse(
         turn.stream(), media_type="text/event-stream", headers=dict(SSE_HEADERS)

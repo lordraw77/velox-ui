@@ -113,7 +113,9 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 
 `POST /api/chats/{id}/completions` responds `text/event-stream`. The request carries
 the parent message id, the user content, the model reference (or custom model slug),
-per-turn parameter overrides and tool/RAG toggles. The response event types are a
+per-turn parameter overrides, `knowledge_ids` (RAG) and `tool_server_ids` (phase 8: MCP
+server ids to offer tools from — the client resolves this from the chat's custom model
+the same way it already resolves `knowledge_ids`). The response event types are a
 closed set, versioned by the `event:` field:
 
 ```
@@ -121,7 +123,7 @@ event: start        {"message_id": "...", "model_ref": "...", "resolved_from": "
 event: status       {"phase": "loading_model"|"prompt_eval"|"generating"|"tool_wait"}
 event: delta        {"t": "…text chunk…"}
 event: reasoning    {"t": "…thinking chunk…"}
-event: tool_call    {"id": "...", "name": "...", "args": {...}, "approval": "required"}
+event: tool_call    {"id": "...", "name": "...", "args": {...}, "approval": "required"|"auto"}
 event: tool_result  {"id": "...", "ok": true, "content": "..."}
 event: citation     {"chunk_id": "...", "document_id": "...", "locator": {...}}
 event: fallback     {"from": "...", "to": "...", "reason": "backend_offline"}
@@ -131,6 +133,17 @@ event: usage        {"tokens_in": 12, "tokens_out": 340, "cost_micros": 0,
 event: error        {"code": "context_overflow", "message": "...", "retryable": false}
 event: done         {"finish_reason": "stop"}
 ```
+
+As implemented (phase 8): a turn that offers tools can run several `tool_call`/
+`tool_result` round trips before its `done`, one per tool the model calls, up to
+`MAX_TOOL_ITERATIONS` (4) — see `services/chat.py` and
+[ADR-0020](../adr/0020-mcp-transport-and-tool-calling-strategy.md). `tool_call.approval`
+is `"required"` when the owning MCP server's `approval` mode (`always`/`once`, and
+`once` for a tool not already approved this process) means the turn is now blocked on
+`POST /api/tools/approve`; `"auto"` means it ran immediately. Only the turn's final
+reply is persisted as a `message` row — the intermediate tool-call/result exchange is
+not replayed on a later turn, but is attached to that row's `meta.tool_trace` so a
+reopened chat can still show what happened (ADR-0020).
 
 `delta` frames are the only ones on the hot path. They are emitted as pre-framed bytes
 (`b"event: delta\ndata: {\"t\":"` + escaped text + `b"}\n\n"`) without building an
@@ -149,9 +162,12 @@ message `stopped`; `POST /stop` does the same from another tab.
 | GET/PATCH/DELETE | `/api/custom-models/{id}` | **phase 6** a private model owned by someone else answers 403/404 |
 | GET/POST/PATCH/DELETE | `/api/prompts…` | not yet implemented |
 
-`tools`, `knowledge_ids` and `fallback_chain` are carried on `custom_model` for phases
-8 (MCP) and 7 (RAG); phase 6 writes `tools`/`knowledge_ids` as `null` and does not act
-on them.
+`tools`, `knowledge_ids` and `fallback_chain` are carried on `custom_model`.
+`knowledge_ids` (phase 7) and `tools` (phase 8) are both acted on: `tools` is a list of
+`mcp_server` ids, resolved into that server's cached tool list the same way
+`knowledge_ids` is resolved into retrieved chunks — client-side, when starting a chat
+from the custom model, then sent on `POST .../completions` as `tool_server_ids`.
+`fallback_chain` is still carried but unused by any phase so far.
 
 ## Files and RAG
 
@@ -171,11 +187,11 @@ on them.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET/POST/PATCH/DELETE | `/api/mcp/servers…` | |
-| POST | `/api/mcp/servers/{id}/connect` | connect + cache the tool list |
-| GET | `/api/mcp/servers/{id}/tools` | |
-| POST | `/api/tools/approve` | approve or reject a pending tool call |
-| GET | `/api/tools` | all tools available to the caller (MCP + builtin + plugins) |
+| GET/POST/PATCH/DELETE | `/api/mcp/servers…` | **phase 8**; `auth_token` on create/update is encrypted at rest (ADR-0013), never echoed back except as `auth_hint: "set"` |
+| POST | `/api/mcp/servers/{id}/connect` | **phase 8** connect + cache the tool list; a real handshake against the configured transport, not a stub |
+| GET | `/api/mcp/servers/{id}/tools` | **phase 8** the cached list, no reconnect |
+| POST | `/api/tools/approve` | **phase 8** approve or reject a pending tool call raised by a stream's `tool_call` event; `{call_id, approved, remember}` |
+| GET | `/api/tools` | **phase 8** every tool the caller's enabled MCP servers currently cache; MCP-only — no built-in tool ships this phase (ADR-0020) |
 
 ## OpenAI-compatible gateway
 

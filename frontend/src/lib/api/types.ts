@@ -34,6 +34,8 @@ export interface Message {
   cost_micros: number | null;
   timings: Timings | null;
   error: ApiError | null;
+  /** Free-form extras. Currently only `tool_trace`, when the turn used tools. */
+  meta: { tool_trace?: ToolTraceEntry[] } | null;
   created_at: number;
   sibling_index: number;
   sibling_count: number;
@@ -310,6 +312,7 @@ export interface CustomModel {
   system_prompt: string | null;
   params: Record<string, ParamValue> | null;
   knowledge_ids: string[];
+  tools: string[];
   fallback_chain: FallbackEntry[];
   visibility: CustomModelVisibility;
   created_at: number;
@@ -388,4 +391,60 @@ export interface AdminUser {
 export interface AdminUserPage {
   items: AdminUser[];
   next_cursor: string | null;
+}
+
+// --- MCP and tools (phase 8) -------------------------------------------------------
+
+export type McpTransport = "stdio" | "http_sse";
+export type McpApproval = "always" | "once" | "never";
+
+export interface McpServer {
+  id: string;
+  owner_id: string | null;
+  name: string;
+  transport: McpTransport;
+  /** stdio: `{command, args?, env?}`; http_sse: `{url, headers?}`. Never a secret. */
+  config: Record<string, unknown>;
+  /** `"set"` when a credential is stored, otherwise null. Never the credential itself. */
+  auth_hint: string | null;
+  enabled: boolean;
+  approval: McpApproval;
+  tool_count: number;
+  created_at: number;
+}
+
+export interface McpTool {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+/** A tool available to the caller, qualified by the MCP server it comes from. */
+export interface AvailableTool extends McpTool {
+  server_id: string;
+  server_name: string;
+}
+
+/** `event: tool_call` payload, streamed mid-turn (docs/design/03-http-api.md). */
+export interface ToolCallEvent {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  approval?: "required" | "auto";
+}
+
+/** `event: tool_result` payload. */
+export interface ToolResultEvent {
+  id: string;
+  ok: boolean;
+  content: string;
+}
+
+/** One call/result pair, as persisted on a finished message's `meta.tool_trace`. */
+export interface ToolTraceEntry {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  ok: boolean;
+  content: string;
 }

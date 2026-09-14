@@ -34,6 +34,7 @@ __all__ = [
     "Document",
     "File",
     "Folder",
+    "McpServer",
     "Message",
     "ModelParams",
     "OidcIdentity",
@@ -246,8 +247,9 @@ class CustomModel(Base):
     Binds a system prompt and parameters to a slug, so a chat can be started from it
     directly.
 
-    ``tools``, ``knowledge_ids`` and ``fallback_chain`` are carried for phases 7 and 8
-    (RAG and MCP); phase 6 writes them as empty/null and nothing yet reads them.
+    ``knowledge_ids`` (RAG collections, phase 7) and ``tools`` (MCP server ids, phase 8)
+    are both acted on as of their respective phases; ``fallback_chain`` is still carried
+    but unused.
     """
 
     __tablename__ = "custom_model"
@@ -478,6 +480,35 @@ class Chunk(Base):
     __table_args__ = (
         UniqueConstraint("document_id", "ordinal", name="uq_chunk_document_ordinal"),
     )
+
+
+class McpServer(Base):
+    """A configured MCP server (phase 8).
+
+    ``config`` holds the transport's non-secret connection details (command/args/env
+    for ``stdio``, url/headers for ``http_sse``); any bearer token or secret env value
+    is pulled out into ``secret`` and referenced by ``auth_ref``, never stored here in
+    the clear (ADR-0013). ``tool_cache`` is the last successful ``list_tools`` result,
+    refreshed by ``POST /api/mcp/servers/{id}/connect`` so a chat turn can offer tools
+    without reconnecting on every request.
+    """
+
+    __tablename__ = "mcp_server"
+
+    id: Mapped[UlidPk]
+    owner_id: Mapped[UlidRef | None] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = shortstr(200)
+    transport: Mapped[str] = shortstr(16)
+    config: Mapped[Json]
+    auth_ref: Mapped[str | None] = shortstr(128)
+    enabled: Mapped[BoolInt] = mapped_column(default=True)
+    approval: Mapped[str] = shortstr(16)
+    tool_cache: Mapped[Json | None]
+    created_at: Mapped[Timestamp]
+
+    __table_args__ = (Index("ix_mcp_server_owner", "owner_id"),)
 
 
 def table_names() -> tuple[str, ...]:

@@ -11,7 +11,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "$lib/api/client";
-  import type { Collection, CustomModel, CustomModelVisibility, FallbackEntry } from "$lib/api/types";
+  import type {
+    Collection,
+    CustomModel,
+    CustomModelVisibility,
+    FallbackEntry,
+    McpServer,
+  } from "$lib/api/types";
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
 
@@ -23,6 +29,7 @@
 
   let models = $state<CustomModel[]>([]);
   let collections = $state<Collection[]>([]);
+  let mcpServers = $state<McpServer[]>([]);
   let loading = $state(true);
   let busy = $state(false);
   let editingId = $state<string | null>(null);
@@ -36,6 +43,7 @@
     top_p: string;
     max_tokens: string;
     knowledge_ids: string[];
+    tools: string[];
     fallback_chain: FallbackEntry[];
     visibility: CustomModelVisibility;
   }
@@ -50,6 +58,7 @@
       top_p: "",
       max_tokens: "",
       knowledge_ids: [],
+      tools: [],
       fallback_chain: [],
       visibility: "private",
     };
@@ -62,7 +71,11 @@
   async function load(): Promise<void> {
     loading = true;
     try {
-      [models, collections] = await Promise.all([api.customModels(), api.collections()]);
+      [models, collections, mcpServers] = await Promise.all([
+        api.customModels(),
+        api.collections(),
+        api.mcpServers(),
+      ]);
     } catch (error) {
       app.report(error);
     } finally {
@@ -86,6 +99,7 @@
       top_p: model.params?.top_p !== undefined ? String(model.params.top_p) : "",
       max_tokens: model.params?.max_tokens !== undefined ? String(model.params.max_tokens) : "",
       knowledge_ids: [...model.knowledge_ids],
+      tools: [...model.tools],
       fallback_chain: [...model.fallback_chain],
       visibility: model.visibility,
     };
@@ -95,6 +109,12 @@
     draft.knowledge_ids = checked
       ? [...draft.knowledge_ids, collectionId]
       : draft.knowledge_ids.filter((id) => id !== collectionId);
+  }
+
+  function toggleTool(serverId: string, checked: boolean): void {
+    draft.tools = checked
+      ? [...draft.tools, serverId]
+      : draft.tools.filter((id) => id !== serverId);
   }
 
   function cancelEdit(): void {
@@ -126,6 +146,7 @@
         system_prompt: draft.system_prompt || null,
         params: draftParams(),
         knowledge_ids: draft.knowledge_ids,
+        tools: draft.tools,
         fallback_chain: draft.fallback_chain.filter((entry) => entry.provider_id && entry.model_key),
         visibility: draft.visibility,
       };
@@ -273,6 +294,27 @@
                           toggleKnowledge(collection.id, (event.target as HTMLInputElement).checked)}
                       />
                       {collection.name}
+                    </label>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <div class="field wide">
+              <span>{app.t("custommodel.tools")}</span>
+              {#if mcpServers.length === 0}
+                <p class="hint">{app.t("custommodel.noTools")}</p>
+              {:else}
+                <div class="knowledge-list">
+                  {#each mcpServers as server (server.id)}
+                    <label class="knowledge-item">
+                      <input
+                        type="checkbox"
+                        checked={draft.tools.includes(server.id)}
+                        onchange={(event) =>
+                          toggleTool(server.id, (event.target as HTMLInputElement).checked)}
+                      />
+                      {server.name}
                     </label>
                   {/each}
                 </div>

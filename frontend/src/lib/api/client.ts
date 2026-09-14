@@ -15,6 +15,7 @@ import type {
   AdminUser,
   AdminUserPage,
   ApiError,
+  AvailableTool,
   Chat,
   ChatPage,
   ClientConfig,
@@ -27,6 +28,10 @@ import type {
   Folder,
   InstalledModel,
   JobSnapshot,
+  McpApproval,
+  McpServer,
+  McpTool,
+  McpTransport,
   MessagePage,
   ModelDetails,
   ModelParams,
@@ -435,6 +440,7 @@ export class ApiClient {
     system_prompt?: string | null;
     params?: Record<string, ParamValue> | null;
     knowledge_ids?: string[];
+    tools?: string[];
     fallback_chain?: FallbackEntry[];
     visibility?: CustomModelVisibility;
   }): Promise<CustomModel> {
@@ -449,6 +455,7 @@ export class ApiClient {
       system_prompt?: string | null;
       params?: Record<string, ParamValue> | null;
       knowledge_ids?: string[];
+      tools?: string[];
       fallback_chain?: FallbackEntry[];
       visibility?: CustomModelVisibility;
     },
@@ -546,6 +553,56 @@ export class ApiClient {
 
   adminDeleteUser(id: string): Promise<void> {
     return this.request<void>(`/api/admin/users/${id}`, { method: "DELETE" });
+  }
+
+  // --- MCP servers and tools -----------------------------------------------------
+
+  mcpServers(): Promise<McpServer[]> {
+    return this.request<McpServer[]>("/api/mcp/servers");
+  }
+
+  createMcpServer(body: {
+    name: string;
+    transport: McpTransport;
+    config: Record<string, unknown>;
+    auth_token?: string;
+    approval?: McpApproval;
+    enabled?: boolean;
+  }): Promise<McpServer> {
+    return this.#json("POST", "/api/mcp/servers", body);
+  }
+
+  updateMcpServer(
+    id: string,
+    patch: {
+      name?: string;
+      config?: Record<string, unknown>;
+      auth_token?: string;
+      enabled?: boolean;
+      approval?: McpApproval;
+    },
+  ): Promise<McpServer> {
+    return this.#json("PATCH", `/api/mcp/servers/${id}`, patch);
+  }
+
+  deleteMcpServer(id: string): Promise<void> {
+    return this.request<void>(`/api/mcp/servers/${id}`, { method: "DELETE" });
+  }
+
+  connectMcpServer(id: string): Promise<McpTool[]> {
+    return this.#json("POST", `/api/mcp/servers/${id}/connect`);
+  }
+
+  mcpServerTools(id: string): Promise<McpTool[]> {
+    return this.request<McpTool[]>(`/api/mcp/servers/${id}/tools`);
+  }
+
+  availableTools(): Promise<AvailableTool[]> {
+    return this.request<AvailableTool[]>("/api/tools");
+  }
+
+  approveToolCall(callId: string, approved: boolean, remember = false): Promise<{ ok: boolean }> {
+    return this.#json("POST", "/api/tools/approve", { call_id: callId, approved, remember });
   }
 }
 

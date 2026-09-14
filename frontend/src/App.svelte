@@ -21,7 +21,15 @@
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
 
-  type View = "chat" | "search" | "models" | "providers" | "custom-models" | "knowledge" | "admin";
+  type View =
+    | "chat"
+    | "search"
+    | "models"
+    | "providers"
+    | "custom-models"
+    | "knowledge"
+    | "mcp"
+    | "admin";
 
   let view = $state<View>("chat");
   let lastSent = $state<string | null>(null);
@@ -38,6 +46,8 @@
       view = "custom-models";
     } else if (hash.startsWith("#/knowledge")) {
       view = "knowledge";
+    } else if (hash.startsWith("#/mcp")) {
+      view = "mcp";
     } else if (hash.startsWith("#/admin")) {
       view = app.isAdmin ? "admin" : "chat";
     } else {
@@ -114,6 +124,10 @@
       {:else if view === "knowledge"}
         {#await import("$lib/components/KnowledgePanel.svelte") then { default: KnowledgePanel }}
           <KnowledgePanel />
+        {/await}
+      {:else if view === "mcp"}
+        {#await import("$lib/components/McpServersPanel.svelte") then { default: McpServersPanel }}
+          <McpServersPanel />
         {/await}
       {:else if view === "admin"}
         {#await import("$lib/components/AdminPanel.svelte") then { default: AdminPanel }}

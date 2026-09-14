@@ -29,15 +29,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any
+
+import msgspec
 
 from velox_ui.api.sse import HEARTBEAT, encode_event, encode_text_delta
 from velox_ui.clock import MonotonicTimer
 from velox_ui.db.repositories.chats import ChatRepository
 from velox_ui.errors import NotFoundError, VeloxError
 from velox_ui.ids import new_ulid
+from velox_ui.mcp.client import McpError
+from velox_ui.mcp.schema_translate import render_tool_result, split_qualified_name, to_tool_spec
 from velox_ui.metrics import METRICS
 from velox_ui.providers.base import (
     Capabilities,
@@ -50,16 +55,25 @@ from velox_ui.providers.base import (
     Status,
     StreamEvent,
     TextDelta,
+    ToolCall,
     ToolCallDelta,
+    ToolSpec,
+    ToolSupport,
     Usage,
 )
 from velox_ui.providers.errors import ProviderError
+from velox_ui.providers.tools.emulated import (
+    build_tool_prompt,
+    parse_tool_call,
+    strip_tool_call,
+)
 from velox_ui.services.context import build_messages
 from velox_ui.services.model_params import merge_params
 from velox_ui.services.persistence import StreamWriter
 from velox_ui.state import AppState
 
 if TYPE_CHECKING:  # pragma: no cover - typing only; keeps rag/ off the cold path.
+    from velox_ui.mcp.manager import ServerTool
     from velox_ui.rag.retrieve import RetrievedChunk
 
 __all__ = ["HEARTBEAT_INTERVAL_S", "ChatService", "PreparedTurn"]
@@ -74,6 +88,18 @@ generating at one token per second, must not look dead to an intermediate proxy.
 """
 
 _QUEUE_SENTINEL = object()
+
+MAX_TOOL_ITERATIONS = 4
+"""Hard cap on tool-call round trips within one turn.
+
+Without a cap, a model stuck calling the same tool over and over would turn one HTTP
+request into an unbounded number of MCP calls and provider round trips. Four rounds
+covers every realistic "look something up, then answer" pattern; a model that still
+wants another tool after that gets its last tool result and is left to answer with
+what it has, same as a model given no tools that ran out of context.
+"""
+
+_APPROVAL_TIMEOUT_S = 300.0
 
 
 class PreparedTurn:
@@ -91,22 +117,52 @@ class PreparedTurn:
         provider: Provider,
         model_ref: str,
         chat_id: str,
+        user_id: str,
         parent_id: str | None,
         depth: int,
         content: str,
         request: ChatRequest,
         citations: Sequence[RetrievedChunk] = (),
+        tool_index: dict[str, ServerTool] | None = None,
+        native_tools: bool = False,
     ) -> None:
-        """Store everything the stream needs; perform no I/O."""
+        """Store everything the stream needs; perform no I/O.
+
+        Args:
+            state: Application state.
+            provider: The resolved backend for this turn.
+            model_ref: ``"provider_id:model_key"``.
+            chat_id: Conversation this turn appends to.
+            user_id: The turn's owner, needed mid-stream to execute an MCP tool call
+                and to check approval on its behalf.
+            parent_id: Branch point for the new messages.
+            depth: Tree depth of the user message about to be inserted.
+            content: The user's message text.
+            request: The provider request built by :meth:`ChatService.prepare`.
+            citations: RAG hits to announce before generation starts.
+            tool_index: Every offered tool, keyed by its provider-facing qualified
+                name (``"<server>__<tool>"``), so a tool call the model emits can be
+                traced back to which MCP server to execute it against. Empty when the
+                turn offers no tools — the common case, and the one this costs nothing
+                beyond an empty-dict membership check for.
+            native_tools: Whether tools were attached to ``request.tools`` for the
+                provider's own tool-calling support. When ``False`` but ``tool_index``
+                is non-empty, tools were instead described in the prompt
+                (``providers/tools/emulated.py``) and a tool call is looked for by
+                parsing the model's text after each round finishes.
+        """
         self._state = state
         self._provider = provider
         self._model_ref = model_ref
         self._chat_id = chat_id
+        self._user_id = user_id
         self._parent_id = parent_id
         self._depth = depth
         self._content = content
         self._request = request
         self._citations = citations
+        self._tool_index = tool_index or {}
+        self._native_tools = native_tools
         self.user_message_id = new_ulid()
         self.assistant_message_id = new_ulid()
 
@@ -154,42 +210,68 @@ class PreparedTurn:
         ttft_ms: float | None = None
         usage: Usage | None = None
         reasoning_parts: list[str] = []
+        tool_trace: list[dict[str, Any]] = []
+        messages = list(self._request.messages)
 
         try:
-            async for event in _pump(self._provider.stream_chat(self._request)):
-                if event is None:
-                    yield HEARTBEAT
-                    continue
+            for iteration in range(MAX_TOOL_ITERATIONS):
+                request = (
+                    msgspec.structs.replace(self._request, messages=tuple(messages))
+                    if iteration > 0
+                    else self._request
+                )
+                round_text_parts: list[str] = []
+                native_calls: dict[str, _CallBuffer] = {}
+                round_finish = "stop"
 
-                if isinstance(event, TextDelta):
-                    if ttft_ms is None:
-                        ttft_ms = timer.elapsed_ms()
-                        METRICS.ttft.labels(provider=provider_id, model=model_key).observe(
-                            ttft_ms / 1_000.0
+                async for event in _pump(self._provider.stream_chat(request)):
+                    if event is None:
+                        yield HEARTBEAT
+                        continue
+
+                    if isinstance(event, TextDelta):
+                        if ttft_ms is None:
+                            ttft_ms = timer.elapsed_ms()
+                            METRICS.ttft.labels(provider=provider_id, model=model_key).observe(
+                                ttft_ms / 1_000.0
+                            )
+                        round_text_parts.append(event.text)
+                        writer.append(event.text)
+                        writer.maybe_flush()
+                        yield encode_text_delta(event.text)
+
+                    elif isinstance(event, Status):
+                        yield encode_event("status", {"phase": str(event.phase)})
+
+                    elif isinstance(event, ReasoningDelta):
+                        reasoning_parts.append(event.text)
+                        yield encode_event("reasoning", {"t": event.text})
+
+                    elif isinstance(event, ToolCallDelta):
+                        buffer = native_calls.setdefault(
+                            event.id, _CallBuffer(id=event.id, name=event.name)
                         )
-                    writer.append(event.text)
-                    writer.maybe_flush()
-                    yield encode_text_delta(event.text)
+                        buffer.arguments += event.arguments_fragment
 
-                elif isinstance(event, Status):
-                    yield encode_event("status", {"phase": str(event.phase)})
+                    elif isinstance(event, Usage):
+                        usage = _merge_usage(usage, event)
 
-                elif isinstance(event, ReasoningDelta):
-                    reasoning_parts.append(event.text)
-                    yield encode_event("reasoning", {"t": event.text})
+                    elif isinstance(event, Done):
+                        round_finish = event.finish_reason
+                        status = "complete"
 
-                elif isinstance(event, ToolCallDelta):
-                    yield encode_event(
-                        "tool_call",
-                        {"id": event.id, "name": event.name, "args": event.arguments_fragment},
-                    )
+                finish_reason = round_finish
+                round_text = "".join(round_text_parts)
+                calls = self._detect_tool_calls(round_finish, native_calls, round_text)
+                if not calls or iteration == MAX_TOOL_ITERATIONS - 1:
+                    break
 
-                elif isinstance(event, Usage):
-                    usage = event
-
-                elif isinstance(event, Done):
-                    finish_reason = event.finish_reason
-                    status = "complete"
+                messages.append(
+                    _assistant_tool_call_message(calls, round_text, native=self._native_tools)
+                )
+                for call in calls:
+                    async for frame in self._run_tool_call(call, messages, tool_trace):
+                        yield frame
 
             yield encode_event(
                 "usage", _usage_payload(usage, ttft_ms=ttft_ms, elapsed_ms=timer.elapsed_ms())
@@ -240,10 +322,106 @@ class PreparedTurn:
                     is_local=self._provider.is_local,
                     ttft_ms=ttft_ms,
                     elapsed_ms=timer.elapsed_ms(),
+                    meta={"tool_trace": tool_trace} if tool_trace else None,
                 )
             )
             with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.shield(finalizer)
+
+    def _detect_tool_calls(
+        self,
+        finish_reason: str,
+        native_calls: dict[str, _CallBuffer],
+        round_text: str,
+    ) -> list[ToolCall]:
+        """Resolve one round's tool calls, native first, then the emulated text parse.
+
+        Returns an empty list when the turn offers no tools at all — the common case,
+        checked first so a chat with no MCP servers attached never runs the emulated
+        parser over its ordinary replies.
+        """
+        if not self._tool_index:
+            return []
+        if self._native_tools:
+            if finish_reason != "tool_calls" or not native_calls:
+                return []
+            return [
+                ToolCall(id=buf.id, name=buf.name, arguments=buf.arguments or "{}")
+                for buf in native_calls.values()
+            ]
+        call = parse_tool_call(round_text, call_id=new_ulid())
+        return [call] if call is not None else []
+
+    async def _run_tool_call(
+        self, call: ToolCall, messages: list[ChatMessage], tool_trace: list[dict[str, Any]]
+    ) -> AsyncIterator[bytes]:
+        """Execute one tool call: approval gate, execution, SSE events, context append.
+
+        Appends the tool's result to ``messages`` in place so the next generation
+        round sees it, and records a trace entry consumed by :meth:`stream` for the
+        persisted message's ``meta.tool_trace``.
+        """
+        server_tool = self._tool_index.get(call.name)
+        try:
+            arguments = json.loads(call.arguments) if call.arguments else {}
+            if not isinstance(arguments, dict):
+                arguments = {}
+        except json.JSONDecodeError:
+            arguments = {}
+
+        if server_tool is None:
+            ok = False
+            content = f"Unknown tool '{call.name}'."
+            yield encode_event(
+                "tool_call", {"id": call.id, "name": call.name, "args": arguments}
+            )
+        else:
+            split = split_qualified_name(call.name)
+            raw_name = split[1] if split is not None else call.name
+            decision = self._state.mcp.gate(
+                server_id=server_tool.server_id,
+                approval=server_tool.approval,
+                tool_name=raw_name,
+            )
+            approval_field = "required" if decision.requires_wait else "auto"
+            yield encode_event(
+                "tool_call",
+                {
+                    "id": call.id,
+                    "name": call.name,
+                    "args": arguments,
+                    "approval": approval_field,
+                },
+            )
+            approved = decision.approved
+            if decision.requires_wait:
+                self._state.mcp.register_pending(
+                    call.id, server_id=server_tool.server_id, tool_name=raw_name
+                )
+                yield encode_event("status", {"phase": "tool_wait"})
+                approved = await self._state.mcp.wait_for_approval(
+                    call.id, timeout_s=_APPROVAL_TIMEOUT_S
+                )
+
+            if not approved:
+                ok = False
+                content = "The user did not approve this tool call."
+            else:
+                try:
+                    result = await self._state.mcp.call_tool(
+                        server_tool.server_id, raw_name, arguments, user_id=self._user_id
+                    )
+                    ok = not result.is_error
+                    content = render_tool_result(result)
+                except McpError as exc:
+                    ok = False
+                    content = f"Tool call failed: {exc.message}"
+
+        yield encode_event("tool_result", {"id": call.id, "ok": ok, "content": content})
+        tool_trace.append(
+            {"id": call.id, "name": call.name, "args": arguments, "ok": ok, "content": content}
+        )
+        _append_tool_result(messages, call, content, native=self._native_tools)
 
     async def _insert_turn(self) -> None:
         """Insert the user turn and the empty assistant row."""
@@ -291,6 +469,7 @@ class ChatService:
         params: SamplingParams | None = None,
         system_prompt: str | None = None,
         knowledge_ids: Sequence[str] = (),
+        tool_server_ids: Sequence[str] = (),
     ) -> PreparedTurn:
         """Validate a turn and gather everything needed to run it.
 
@@ -309,6 +488,10 @@ class ChatService:
                 and every-day case, and costs nothing beyond this check — no import,
                 no query — so a chat with no RAG configured pays no part of the
                 retrieval budget (docs/design/00-overview.md, TTFT budget).
+            tool_server_ids: Enabled MCP server ids to offer tools from (resolved by
+                the client from the chat's custom model, same pattern as
+                ``knowledge_ids``). Empty is the default and costs one dictionary
+                check on the completion path, same reasoning as ``knowledge_ids``.
 
         Returns:
             A :class:`PreparedTurn`.
@@ -345,6 +528,29 @@ class ChatService:
                     0, ChatMessage(role="system", content=_context_block(citations))
                 )
 
+        tool_index: dict[str, ServerTool] = {}
+        request_tools: tuple[ToolSpec, ...] | None = None
+        native_tools = False
+        if tool_server_ids:
+            server_tools = await self._state.mcp.tools_for_servers(
+                tool_server_ids, user_id=user_id
+            )
+            specs: list[ToolSpec] = []
+            for server_tool in server_tools:
+                spec = to_tool_spec(server_tool.tool, server_name=server_tool.server_name)
+                specs.append(spec)
+                tool_index[spec.name] = server_tool
+            if specs:
+                native_tools = (
+                    capabilities is not None and capabilities.tools == ToolSupport.NATIVE
+                )
+                if native_tools:
+                    request_tools = tuple(specs)
+                else:
+                    messages.append(
+                        ChatMessage(role="system", content=build_tool_prompt(specs))
+                    )
+
         messages.append(ChatMessage(role="user", content=content))
 
         return PreparedTurn(
@@ -352,6 +558,7 @@ class ChatService:
             provider=resolved.provider,
             model_ref=model_ref,
             chat_id=chat_id,
+            user_id=user_id,
             parent_id=branch_from,
             depth=(path[-1].depth + 1) if path else 0,
             content=content,
@@ -359,8 +566,11 @@ class ChatService:
                 model=resolved.model_key,
                 messages=tuple(messages),
                 params=merge_params(saved, params or SamplingParams()),
+                tools=request_tools,
             ),
             citations=citations,
+            tool_index=tool_index,
+            native_tools=native_tools,
         )
 
     async def _retrieve(
@@ -415,6 +625,7 @@ async def _finalize(
     is_local: bool,
     ttft_ms: float | None,
     elapsed_ms: float,
+    meta: dict[str, Any] | None = None,
 ) -> None:
     """Complete the turn's persistence, independently of the request's lifetime."""
     await insert
@@ -422,10 +633,80 @@ async def _finalize(
         status=status,
         reasoning=reasoning,
         model_ref=model_ref,
+        meta=meta,
         tokens_in=usage.tokens_in if usage else None,
         tokens_out=usage.tokens_out if usage else None,
         cost_micros=0 if is_local else None,
         timings=_timings(usage, ttft_ms=ttft_ms, elapsed_ms=elapsed_ms),
+    )
+
+
+class _CallBuffer:
+    """Accumulates one native tool call's argument JSON across ``ToolCallDelta`` fragments."""
+
+    __slots__ = ("arguments", "id", "name")
+
+    def __init__(self, *, id: str, name: str) -> None:
+        """Start an empty buffer for one call id."""
+        self.id = id
+        self.name = name
+        self.arguments = ""
+
+
+def _assistant_tool_call_message(
+    calls: list[ToolCall], round_text: str, *, native: bool
+) -> ChatMessage:
+    """Build the assistant-turn message that preceded this round's tool call(s).
+
+    Native tool calling carries the calls as structured ``tool_calls``, the shape
+    every OpenAI- and Anthropic-style multi-turn tool loop expects to see echoed back.
+    Emulated tool calling has no such field on the wire, so the model's own text
+    (with the ``<tool_call>`` block stripped, since the result is about to answer it)
+    stands in for what it "said" before the call.
+    """
+    if native:
+        return ChatMessage(role="assistant", content="", tool_calls=tuple(calls))
+    return ChatMessage(role="assistant", content=strip_tool_call(round_text))
+
+
+def _append_tool_result(
+    messages: list[ChatMessage], call: ToolCall, content: str, *, native: bool
+) -> None:
+    """Append one tool's result to the running message list, for the next round.
+
+    Native tool calling gets a ``role="tool"`` message tied to the call by
+    ``tool_call_id`` (``providers/base.py``); emulated models were never taught that
+    role exists, so the result instead arrives as an ordinary ``user`` message asking
+    the model to continue with it.
+    """
+    if native:
+        messages.append(
+            ChatMessage(role="tool", content=content, tool_call_id=call.id, name=call.name)
+        )
+    else:
+        messages.append(
+            ChatMessage(
+                role="user",
+                content=(
+                    f"Tool '{call.name}' result:\n{content}\n\n"
+                    "Continue your answer using this result."
+                ),
+            )
+        )
+
+
+def _merge_usage(existing: Usage | None, new: Usage) -> Usage:
+    """Sum token accounting across tool-loop rounds; each round is one backend call."""
+    if existing is None:
+        return new
+    return Usage(
+        tokens_in=existing.tokens_in + new.tokens_in,
+        tokens_out=existing.tokens_out + new.tokens_out,
+        ttft_ms=existing.ttft_ms,
+        tokens_per_second=new.tokens_per_second or existing.tokens_per_second,
+        prompt_eval_ms=(existing.prompt_eval_ms or 0) + (new.prompt_eval_ms or 0) or None,
+        eval_ms=(existing.eval_ms or 0) + (new.eval_ms or 0) or None,
+        cost_micros=existing.cost_micros + new.cost_micros,
     )
 
 
