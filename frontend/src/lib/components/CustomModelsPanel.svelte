@@ -11,7 +11,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "$lib/api/client";
-  import type { CustomModel, CustomModelVisibility, FallbackEntry } from "$lib/api/types";
+  import type { Collection, CustomModel, CustomModelVisibility, FallbackEntry } from "$lib/api/types";
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
 
@@ -22,6 +22,7 @@
   let { onstart }: Props = $props();
 
   let models = $state<CustomModel[]>([]);
+  let collections = $state<Collection[]>([]);
   let loading = $state(true);
   let busy = $state(false);
   let editingId = $state<string | null>(null);
@@ -34,6 +35,7 @@
     temperature: string;
     top_p: string;
     max_tokens: string;
+    knowledge_ids: string[];
     fallback_chain: FallbackEntry[];
     visibility: CustomModelVisibility;
   }
@@ -47,6 +49,7 @@
       temperature: "",
       top_p: "",
       max_tokens: "",
+      knowledge_ids: [],
       fallback_chain: [],
       visibility: "private",
     };
@@ -59,7 +62,7 @@
   async function load(): Promise<void> {
     loading = true;
     try {
-      models = await api.customModels();
+      [models, collections] = await Promise.all([api.customModels(), api.collections()]);
     } catch (error) {
       app.report(error);
     } finally {
@@ -82,9 +85,16 @@
       temperature: model.params?.temperature !== undefined ? String(model.params.temperature) : "",
       top_p: model.params?.top_p !== undefined ? String(model.params.top_p) : "",
       max_tokens: model.params?.max_tokens !== undefined ? String(model.params.max_tokens) : "",
+      knowledge_ids: [...model.knowledge_ids],
       fallback_chain: [...model.fallback_chain],
       visibility: model.visibility,
     };
+  }
+
+  function toggleKnowledge(collectionId: string, checked: boolean): void {
+    draft.knowledge_ids = checked
+      ? [...draft.knowledge_ids, collectionId]
+      : draft.knowledge_ids.filter((id) => id !== collectionId);
   }
 
   function cancelEdit(): void {
@@ -115,6 +125,7 @@
         description: draft.description || null,
         system_prompt: draft.system_prompt || null,
         params: draftParams(),
+        knowledge_ids: draft.knowledge_ids,
         fallback_chain: draft.fallback_chain.filter((entry) => entry.provider_id && entry.model_key),
         visibility: draft.visibility,
       };
@@ -248,6 +259,27 @@
             </div>
 
             <div class="field wide">
+              <span>{app.t("custommodel.knowledge")}</span>
+              {#if collections.length === 0}
+                <p class="hint">{app.t("custommodel.noKnowledge")}</p>
+              {:else}
+                <div class="knowledge-list">
+                  {#each collections as collection (collection.id)}
+                    <label class="knowledge-item">
+                      <input
+                        type="checkbox"
+                        checked={draft.knowledge_ids.includes(collection.id)}
+                        onchange={(event) =>
+                          toggleKnowledge(collection.id, (event.target as HTMLInputElement).checked)}
+                      />
+                      {collection.name}
+                    </label>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <div class="field wide">
               <span>{app.t("custommodel.fallbackChain")}</span>
               {#each draft.fallback_chain as entry, index (index)}
                 <div class="inline-form">
@@ -290,5 +322,19 @@
 
   .danger {
     color: var(--danger);
+  }
+
+  .knowledge-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.3rem;
+  }
+
+  .knowledge-item {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+    font-weight: normal;
   }
 </style>

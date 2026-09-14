@@ -22,6 +22,7 @@ import { readSse } from "$lib/api/sse";
 import type {
   ApiError,
   Chat,
+  CitationEvent,
   CustomModel,
   Message,
   ParamValue,
@@ -38,6 +39,7 @@ interface PendingCustomModel {
   id: string;
   systemPrompt: string | null;
   params: Record<string, ParamValue> | null;
+  knowledgeIds: string[];
 }
 
 /** How often a streaming message's markdown is re-rendered, in milliseconds. */
@@ -53,6 +55,8 @@ export interface RenderedMessage extends Message {
   tail: string;
   /** Whether the reasoning block is expanded. */
   showReasoning: boolean;
+  /** Sources retrieved for this turn, when a knowledge collection was attached. */
+  citations: CitationEvent[];
 }
 
 function toRendered(message: Message): RenderedMessage {
@@ -62,6 +66,7 @@ function toRendered(message: Message): RenderedMessage {
     html: "",
     tail: message.content,
     showReasoning: false,
+    citations: [],
   };
 }
 
@@ -132,6 +137,7 @@ class ConversationStore {
       id: model.id,
       systemPrompt: model.system_prompt,
       params: model.params,
+      knowledgeIds: model.knowledge_ids,
     };
   }
 
@@ -235,6 +241,7 @@ class ConversationStore {
           parent_id: parentId ?? null,
           system_prompt: startingModel?.systemPrompt ?? undefined,
           params: startingModel?.params ?? undefined,
+          knowledge_ids: startingModel?.knowledgeIds ?? undefined,
         },
         this.#controller.signal,
       );
@@ -274,6 +281,12 @@ class ConversationStore {
             if (assistant) {
               assistant.reasoning = (assistant.reasoning ?? "") +
                 (JSON.parse(event.data) as { t: string }).t;
+            }
+            break;
+
+          case "citation":
+            if (assistant) {
+              assistant.citations = [...assistant.citations, JSON.parse(event.data) as CitationEvent];
             }
             break;
 
@@ -377,6 +390,7 @@ class ConversationStore {
       html: "",
       tail: partial.content,
       showReasoning: false,
+      citations: [],
     };
     this.messages = [...this.messages, message];
     return this.messages.at(-1)!;

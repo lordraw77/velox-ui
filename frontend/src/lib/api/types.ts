@@ -309,10 +309,67 @@ export interface CustomModel {
   avatar_url: string | null;
   system_prompt: string | null;
   params: Record<string, ParamValue> | null;
+  knowledge_ids: string[];
   fallback_chain: FallbackEntry[];
   visibility: CustomModelVisibility;
   created_at: number;
   updated_at: number;
+}
+
+// --- RAG: files, collections, documents -------------------------------------------
+
+export interface UploadedFile {
+  id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  created_at: number;
+}
+
+export type CollectionVisibility = "private" | "shared" | "public";
+
+export interface Collection {
+  id: string;
+  owner_id: string;
+  name: string;
+  description: string | null;
+  embedder_ref: string;
+  dim: number;
+  chunking: { max_tokens: number; overlap_tokens: number };
+  visibility: CollectionVisibility;
+  created_at: number;
+}
+
+export type DocumentStatus = "pending" | "parsing" | "embedding" | "ready" | "failed";
+
+export interface RagDocument {
+  id: string;
+  collection_id: string;
+  file_id: string | null;
+  source_url: string | null;
+  title: string;
+  status: DocumentStatus;
+  progress: number;
+  error: string | null;
+  chunk_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface RetrievedChunk {
+  chunk_id: string;
+  document_id: string;
+  document_title: string;
+  content: string;
+  score: number;
+  locator: Record<string, unknown> | null;
+}
+
+export interface CitationEvent {
+  chunk_id: string;
+  document_id: string;
+  locator: Record<string, unknown> | null;
 }
 
 export type UserRole = "admin" | "user";

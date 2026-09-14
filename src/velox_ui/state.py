@@ -24,6 +24,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; importing httpx here would
 
     from velox_ui.services.model_jobs import ModelJobs
     from velox_ui.services.model_params import ModelParamsStore
+    from velox_ui.services.rag_jobs import RagJobs
 
 __all__ = ["AppState"]
 
@@ -47,6 +48,7 @@ class AppState:
         "_http",
         "_model_jobs",
         "_model_params",
+        "_rag_jobs",
         "_tasks",
         "db",
         "discovery",
@@ -69,6 +71,7 @@ class AppState:
         self.discovery: asyncio.Task[Any] | None = None
         self._model_jobs: ModelJobs | None = None
         self._model_params: ModelParamsStore | None = None
+        self._rag_jobs: RagJobs | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
 
     @property
@@ -88,6 +91,15 @@ class AppState:
 
             self._model_params = ModelParamsStore(self)
         return self._model_params
+
+    @property
+    def rag_jobs(self) -> RagJobs:
+        """RAG ingest/embed jobs in progress, created on first use."""
+        if self._rag_jobs is None:
+            from velox_ui.services.rag_jobs import RagJobs
+
+            self._rag_jobs = RagJobs(self)
+        return self._rag_jobs
 
     @property
     def http(self) -> httpx.AsyncClient:

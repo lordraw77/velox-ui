@@ -160,12 +160,12 @@ on them.
 | POST | `/api/files` | multipart upload, sniffed type, size cap |
 | GET/DELETE | `/api/files/{id}` | |
 | GET/POST/PATCH/DELETE | `/api/collections…` | knowledge bases |
-| POST | `/api/collections/{id}/documents` | enqueues ingest, returns job id immediately |
+| POST | `/api/collections/{id}/documents` | multipart form (`file_id`, optional `title`); enqueues ingest, returns the document and job id (202) immediately |
 | GET | `/api/collections/{id}/documents` | with per-document status/progress |
 | DELETE | `/api/documents/{id}` | |
 | POST | `/api/collections/{id}/query` | debug/preview retrieval |
-| GET | `/api/jobs/{id}` | **S** optional SSE progress |
-| POST | `/api/websearch` | run a configured search provider as a RAG source |
+| GET | `/api/rag-jobs/{id}/events` | **S** ingest/embed progress. Its own prefix rather than a shared `/api/jobs/{id}`: this codebase keeps one in-memory job registry per subsystem (`/api/model-jobs` already does the same for downloads, ADR-0017; ADR-0019 does the same for RAG) rather than a single job table/endpoint, so there is no shared registry to serve a generic path from. |
+| POST | `/api/websearch` | typed stub (`501 unsupported_capability`): no search-provider configuration exists anywhere in this codebase yet, so this deliberately does not half-implement an unbriefed feature |
 
 ## Tools and MCP
 

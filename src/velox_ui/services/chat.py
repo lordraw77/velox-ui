@@ -30,8 +30,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any
 
 from velox_ui.api.sse import HEARTBEAT, encode_event, encode_text_delta
 from velox_ui.clock import MonotonicTimer
@@ -58,6 +58,9 @@ from velox_ui.services.context import build_messages
 from velox_ui.services.model_params import merge_params
 from velox_ui.services.persistence import StreamWriter
 from velox_ui.state import AppState
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; keeps rag/ off the cold path.
+    from velox_ui.rag.retrieve import RetrievedChunk
 
 __all__ = ["HEARTBEAT_INTERVAL_S", "ChatService", "PreparedTurn"]
 
@@ -92,6 +95,7 @@ class PreparedTurn:
         depth: int,
         content: str,
         request: ChatRequest,
+        citations: Sequence[RetrievedChunk] = (),
     ) -> None:
         """Store everything the stream needs; perform no I/O."""
         self._state = state
@@ -102,6 +106,7 @@ class PreparedTurn:
         self._depth = depth
         self._content = content
         self._request = request
+        self._citations = citations
         self.user_message_id = new_ulid()
         self.assistant_message_id = new_ulid()
 
@@ -134,6 +139,15 @@ class PreparedTurn:
                 "model_ref": self._model_ref,
             },
         )
+        for citation in self._citations:
+            yield encode_event(
+                "citation",
+                {
+                    "chunk_id": citation.chunk_id,
+                    "document_id": citation.document_id,
+                    "locator": citation.locator,
+                },
+            )
 
         status = "error"
         finish_reason = "error"
@@ -276,6 +290,7 @@ class ChatService:
         parent_id: str | None = None,
         params: SamplingParams | None = None,
         system_prompt: str | None = None,
+        knowledge_ids: Sequence[str] = (),
     ) -> PreparedTurn:
         """Validate a turn and gather everything needed to run it.
 
@@ -288,6 +303,12 @@ class ChatService:
                 is the ordinary "continue the conversation" case.
             params: Per-turn sampling overrides.
             system_prompt: System message for this turn.
+            knowledge_ids: Collection ids to retrieve context from before the turn
+                starts (the client resolves these from the chat's custom model, the
+                same way it already resolves ``system_prompt``). Empty is the default
+                and every-day case, and costs nothing beyond this check — no import,
+                no query — so a chat with no RAG configured pays no part of the
+                retrieval budget (docs/design/00-overview.md, TTFT budget).
 
         Returns:
             A :class:`PreparedTurn`.
@@ -315,6 +336,15 @@ class ChatService:
             system_prompt=system_prompt,
             context_window=capabilities.context_window if capabilities else None,
         )
+
+        citations: list[RetrievedChunk] = []
+        if knowledge_ids:
+            citations = await self._retrieve(knowledge_ids, content)
+            if citations:
+                messages.insert(
+                    0, ChatMessage(role="system", content=_context_block(citations))
+                )
+
         messages.append(ChatMessage(role="user", content=content))
 
         return PreparedTurn(
@@ -330,7 +360,34 @@ class ChatService:
                 messages=tuple(messages),
                 params=merge_params(saved, params or SamplingParams()),
             ),
+            citations=citations,
         )
+
+    async def _retrieve(
+        self, knowledge_ids: Sequence[str], query: str, *, k_per_collection: int = 4
+    ) -> list[RetrievedChunk]:
+        """Fetch the best chunks across every knowledge collection attached to the turn.
+
+        Only reached when ``knowledge_ids`` is non-empty, so ``rag/`` is imported here
+        and nowhere on the default chat path (import-cost rule,
+        docs/design/01-repo-layout.md).
+        """
+        from velox_ui.db.repositories.rag import CollectionRepository, to_collection_summary
+        from velox_ui.rag.retrieve import retrieve
+
+        hits: list[RetrievedChunk] = []
+        async with self._state.db.session() as session:
+            collections = [
+                to_collection_summary(row)
+                for collection_id in knowledge_ids
+                if (row := await CollectionRepository(session).get(collection_id)) is not None
+            ]
+        for summary in collections:
+            hits.extend(
+                await retrieve(self._state, collection=summary, query=query, k=k_per_collection)
+            )
+        hits.sort(key=lambda hit: hit.score, reverse=True)
+        return hits[: max(k_per_collection, 8)]
 
     @staticmethod
     async def _capabilities_of(provider: Provider, model_key: str) -> Capabilities | None:
@@ -369,6 +426,19 @@ async def _finalize(
         tokens_out=usage.tokens_out if usage else None,
         cost_micros=0 if is_local else None,
         timings=_timings(usage, ttft_ms=ttft_ms, elapsed_ms=elapsed_ms),
+    )
+
+
+def _context_block(citations: Sequence[RetrievedChunk]) -> str:
+    """Render retrieved chunks as a system message the provider sees before the user turn."""
+    parts = [
+        f"[{index}] {citation.document_title}\n{citation.content}"
+        for index, citation in enumerate(citations, start=1)
+    ]
+    return (
+        "Use the following retrieved context to answer the user's question. "
+        "Cite it by its bracketed number when you rely on it; ignore it if it is "
+        "not relevant.\n\n" + "\n\n".join(parts)
     )
 
 

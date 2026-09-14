@@ -44,6 +44,7 @@ class CreateCustomModelRequest(BaseModel):
     avatar_url: str | None = Field(default=None, max_length=1024)
     system_prompt: str | None = None
     params: dict[str, Any] | None = None
+    knowledge_ids: list[str] = Field(default_factory=list)
     fallback_chain: list[FallbackEntryRequest] = Field(default_factory=list)
     visibility: str = "private"
 
@@ -73,6 +74,7 @@ class UpdateCustomModelRequest(BaseModel):
     avatar_url: str | None = Field(default=None, max_length=1024)
     system_prompt: str | None = None
     params: dict[str, Any] | None = None
+    knowledge_ids: list[str] | None = None
     fallback_chain: list[FallbackEntryRequest] | None = None
     visibility: str | None = None
 
@@ -95,6 +97,7 @@ class CustomModelResponse(BaseModel):
     avatar_url: str | None
     system_prompt: str | None
     params: dict[str, Any] | None
+    knowledge_ids: list[str]
     fallback_chain: list[FallbackEntryRequest]
     visibility: str
     created_at: int
@@ -112,6 +115,7 @@ def _to_response(model: CustomModelSummary) -> CustomModelResponse:
         avatar_url=model.avatar_url,
         system_prompt=model.system_prompt,
         params=model.params,
+        knowledge_ids=list(model.knowledge_ids),
         fallback_chain=[
             FallbackEntryRequest(provider_id=entry.provider_id, model_key=entry.model_key)
             for entry in model.fallback_chain
@@ -155,6 +159,7 @@ async def create_custom_model(
             avatar_url=payload.avatar_url,
             system_prompt=payload.system_prompt,
             params=payload.params,
+            knowledge_ids=payload.knowledge_ids,
             fallback_chain=[
                 FallbackEntry(provider_id=entry.provider_id, model_key=entry.model_key)
                 for entry in payload.fallback_chain
@@ -216,6 +221,7 @@ async def update_custom_model(
             avatar_url=payload.avatar_url,
             system_prompt=payload.system_prompt,
             params=payload.params,
+            knowledge_ids=payload.knowledge_ids,
             fallback_chain=chain,
             visibility=payload.visibility,
         )

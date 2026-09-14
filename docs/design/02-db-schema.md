@@ -360,10 +360,18 @@ CREATE TABLE chunk (
   UNIQUE (document_id, ordinal)
 );
 
--- SQLite: virtual table `chunk_vec USING vec0(chunk_id TEXT PRIMARY KEY,
---         embedding float[<dim>])` per collection dimension.
--- Postgres: `chunk_embedding(chunk_id, embedding vector(<dim>))` + HNSW index.
--- Both are created by migrations behind rag/store/.
+-- One physical vector table per collection, named `chunk_vec_<collection_id>`
+-- (rag/store/base.py:vector_table_name), because sqlite-vec's vec0 and pgvector's
+-- vector(n) are both fixed-width per table and different collections may use
+-- embedders of different dimensions. Not versioned in alembic migrations for the
+-- same reason: the width isn't known until a collection is created.
+-- SQLite (default, ADR-0011): `CREATE VIRTUAL TABLE chunk_vec_<id> USING vec0(
+--   chunk_id TEXT PRIMARY KEY, embedding float[<dim>] distance_metric=cosine)`,
+-- via the sqlite-vec loadable extension (rag/store/sqlite_vec.py).
+-- PostgreSQL: `chunk_vec_<id>(chunk_id TEXT PRIMARY KEY, embedding vector(<dim>))`
+-- with an HNSW index (`vector_cosine_ops`), via the pgvector extension
+-- (rag/store/pgvector.py). Both are created by `CollectionRepository`'s caller
+-- (api/routes/rag.py) at collection-creation time, not by a migration.
 ```
 
 ## Tools, MCP, jobs, usage
@@ -382,18 +390,13 @@ CREATE TABLE mcp_server (
   created_at INTEGER NOT NULL
 );
 
-CREATE TABLE job (
-  id           CHAR(26) PRIMARY KEY,
-  kind         TEXT NOT NULL,               -- 'ingest' | 'embed' | 'model_pull'
-  user_id      CHAR(26) REFERENCES app_user(id) ON DELETE CASCADE,
-  target_id    TEXT,
-  state        TEXT NOT NULL,               -- 'queued'|'running'|'done'|'failed'
-  progress     INTEGER NOT NULL DEFAULT 0,
-  detail       TEXT,
-  created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL
-);
-CREATE INDEX ix_job_state ON job(state, created_at);
+-- No `job` table exists. ADR-0017 (model pulls) found no recoverable state worth a
+-- table: a download or an ingest is idempotent and resumable from what is already on
+-- disk, so persisting "a job was running" bought nothing a restart could not recompute.
+-- `services/model_jobs.py` and `services/rag_jobs.py` (ADR-0019) hold jobs in memory
+-- instead, as a snapshot-plus-version-counter per job, kinds `pull`/`create` and
+-- `ingest`/`embed` respectively. RAG ingest's durable state is the `document` row's
+-- own `status`/`progress`/`error`/`chunk_count` columns, updated as the job runs.
 
 -- One row per completed turn. Feeds quotas, cost reports and the admin dashboard.
 -- Never read on the hot path; written by the persistence queue.

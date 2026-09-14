@@ -36,6 +36,7 @@ from velox_ui.api.routes import (
     local_models,
     models,
     providers,
+    rag,
     search,
     system,
     tags,
@@ -113,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tags.router)
     app.include_router(search.router)
     app.include_router(custom_models.router)
+    app.include_router(rag.router)
     app.include_router(admin.router)
 
     # Last, so the single-page fallback cannot shadow an API route.

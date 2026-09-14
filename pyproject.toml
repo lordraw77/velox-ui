@@ -38,11 +38,22 @@ dependencies = [
   "cryptography>=43.0",
   "prometheus-client>=0.21",
   "python-multipart>=0.0.18",
+  # sqlite-vec: the default vector store (ADR-0011). A loadable extension, ~1 MB,
+  # no compiled numpy stack of its own — safe to keep in the base image.
+  "sqlite-vec>=0.1.9",
+  # Pure-Python PDF text extraction for RAG document ingestion. No native deps.
+  "pypdf>=5.0",
 ]
 
 [project.optional-dependencies]
 postgres = ["asyncpg>=0.30"]
 uvicorn = ["uvicorn[standard]>=0.32"]
+# The local embedding default (ADR-0010). Kept out of the base image: onnxruntime
+# and its transitive deps add tens of MB against a 250 MB image budget, and most
+# self-hosted instances that never create a RAG collection should not pay for it.
+# `rag/embedders/registry.py` raises a clear ImportError-derived message if a
+# `fastembed:` collection is used without this extra installed.
+rag = ["fastembed>=0.7"]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
@@ -98,6 +109,10 @@ ignore = [
 "tests/**" = ["S", "D", "ANN"]  # fixtures hold fake credentials by design
 "bench/**" = ["S", "D", "ANN", "ASYNC220", "ASYNC240"]  # benchmarks must start real processes
 "src/velox_ui/db/migrations/**" = ["D", "ANN", "N"]
+# Table names are string-interpolated because neither dialect parametrizes identifiers;
+# vector_table_name() is the injection guard (rejects anything but a 26-char ULID),
+# not the noqa comment bandit's S608 would otherwise want on every statement here.
+"src/velox_ui/rag/store/*.py" = ["S608"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

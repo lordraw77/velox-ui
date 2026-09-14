@@ -67,7 +67,12 @@ Each phase ends working, tested and benchmarked before the next begins.
 6. ~~Organization, search, custom models, full multi-user.~~ **Done** — folders, tags,
    pin/archive, FTS5/tsvector search, custom model presets and an admin user console,
    all with keyset-paginated, dialect-neutral queries.
-7. RAG.
+7. ~~RAG.~~ **Done** — collections, document upload and background ingest/embed jobs
+   (ADR-0019), local ONNX (fastembed) or provider-backed embedders, sqlite-vec/pgvector
+   retrieval, a debug/preview query endpoint, and citations streamed into chats whose
+   custom model carries `knowledge_ids`. `POST /api/websearch` is a typed stub: no
+   search-provider configuration exists elsewhere in the codebase, so it answers
+   `unsupported_capability` rather than partially implementing an unbriefed feature.
 8. MCP and tool calling.
 9. Open WebUI import.
 10. Optional plugins (images, voice), packaging, documentation.

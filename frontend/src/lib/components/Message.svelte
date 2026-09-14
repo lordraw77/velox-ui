@@ -69,6 +69,17 @@
     {/if}
   </div>
 
+  {#if !isUser && message.citations.length > 0}
+    <details class="citations">
+      <summary>{app.t("chat.citations", { count: message.citations.length })}</summary>
+      <ul>
+        {#each message.citations as citation (citation.chunk_id)}
+          <li class="mono">{citation.document_id}</li>
+        {/each}
+      </ul>
+    </details>
+  {/if}
+
   {#if !isUser && message.timings}
     <Metrics
       timings={message.timings}
@@ -137,5 +148,21 @@
     white-space: pre-wrap;
     background: var(--bg-sunken);
     border-radius: var(--radius-sm);
+  }
+
+  .citations {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .citations summary {
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .citations ul {
+    margin: 0.4rem 0 0;
+    padding-left: 1.2rem;
+    color: var(--text-muted);
   }
 </style>

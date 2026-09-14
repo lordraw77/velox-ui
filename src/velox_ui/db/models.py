@@ -28,7 +28,11 @@ __all__ = [
     "Base",
     "Chat",
     "ChatTag",
+    "Chunk",
+    "Collection",
     "CustomModel",
+    "Document",
+    "File",
     "Folder",
     "Message",
     "ModelParams",
@@ -385,6 +389,95 @@ class ChatTag(Base):
     )
 
     __table_args__ = (Index("ix_chat_tag_tag", "tag_id", "chat_id"),)
+
+
+class File(Base):
+    """An uploaded blob: a RAG source document, or (in future phases) a chat attachment.
+
+    The bytes live under the data directory at ``storage_key``; only the metadata is
+    here. ``sha256`` lets a second upload of the same content be recognised instead of
+    stored twice.
+    """
+
+    __tablename__ = "file"
+
+    id: Mapped[UlidPk]
+    user_id: Mapped[UlidRef] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
+    filename: Mapped[str] = shortstr(500)
+    content_type: Mapped[str] = shortstr(200)
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = shortstr(64)
+    storage_key: Mapped[str] = shortstr(500)
+    created_at: Mapped[Timestamp]
+
+    __table_args__ = (Index("ix_file_user_hash", "user_id", "sha256"),)
+
+
+class Collection(Base):
+    """A knowledge base: a named group of documents sharing one embedder and dimension.
+
+    ``embedder_ref`` and ``dim`` are fixed at creation because every chunk in the
+    collection is embedded into the same vector space; changing either would orphan
+    the existing vectors, so the API requires a new collection instead.
+    """
+
+    __tablename__ = "collection"
+
+    id: Mapped[UlidPk]
+    owner_id: Mapped[UlidRef] = mapped_column(ForeignKey("app_user.id", ondelete="CASCADE"))
+    name: Mapped[str] = shortstr(200)
+    description: Mapped[str | None] = longtext()
+    embedder_ref: Mapped[str] = shortstr(200)
+    dim: Mapped[int] = mapped_column(Integer)
+    chunking: Mapped[Json]
+    visibility: Mapped[str] = shortstr(16)
+    created_at: Mapped[Timestamp]
+
+    __table_args__ = (Index("ix_collection_owner", "owner_id"),)
+
+
+class Document(Base):
+    """One ingested source (an uploaded file, or a web-search result) within a collection."""
+
+    __tablename__ = "document"
+
+    id: Mapped[UlidPk]
+    collection_id: Mapped[UlidRef] = mapped_column(
+        ForeignKey("collection.id", ondelete="CASCADE")
+    )
+    file_id: Mapped[str | None] = mapped_column(ForeignKey("file.id", ondelete="SET NULL"))
+    source_url: Mapped[str | None] = shortstr(2000)
+    title: Mapped[str] = shortstr(500)
+    status: Mapped[str] = shortstr(16)
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = longtext()
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[Timestamp]
+    updated_at: Mapped[Timestamp]
+
+    __table_args__ = (Index("ix_document_collection", "collection_id", "status"),)
+
+
+class Chunk(Base):
+    """One retrievable unit of a document's text (rag/chunking.py).
+
+    The embedding vector is not a column here: it lives in the dialect-specific store
+    created by ``rag/store/`` (``chunk_vec`` on SQLite, ``chunk_embedding`` on
+    PostgreSQL), keyed by this row's id.
+    """
+
+    __tablename__ = "chunk"
+
+    id: Mapped[UlidPk]
+    document_id: Mapped[UlidRef] = mapped_column(ForeignKey("document.id", ondelete="CASCADE"))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = longtext()
+    token_count: Mapped[int] = mapped_column(Integer)
+    locator: Mapped[Json | None]
+
+    __table_args__ = (
+        UniqueConstraint("document_id", "ordinal", name="uq_chunk_document_ordinal"),
+    )
 
 
 def table_names() -> tuple[str, ...]:

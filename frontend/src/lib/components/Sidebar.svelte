@@ -14,7 +14,7 @@
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
 
-  type View = "chat" | "search" | "models" | "providers" | "custom-models" | "admin";
+  type View = "chat" | "search" | "models" | "providers" | "custom-models" | "knowledge" | "admin";
 
   interface Props {
     onselect: (id: string | null) => void;
@@ -204,6 +204,9 @@
     </button>
     <button class="btn btn-ghost" class:active={current === "custom-models"} onclick={() => onnavigate("custom-models")} type="button" data-testid="nav-custom-models">
       {app.t("nav.customModels")}
+    </button>
+    <button class="btn btn-ghost" class:active={current === "knowledge"} onclick={() => onnavigate("knowledge")} type="button" data-testid="nav-knowledge">
+      {app.t("nav.knowledge")}
     </button>
     {#if app.isAdmin}
       <button class="btn btn-ghost" class:active={current === "admin"} onclick={() => onnavigate("admin")} type="button" data-testid="nav-admin">

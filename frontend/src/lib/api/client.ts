@@ -18,6 +18,8 @@ import type {
   Chat,
   ChatPage,
   ClientConfig,
+  Collection,
+  CollectionVisibility,
   CustomModel,
   CustomModelVisibility,
   DiscoveredBackend,
@@ -33,10 +35,13 @@ import type {
   ProbeResult,
   ProviderGroup,
   ProviderInfo,
+  RagDocument,
+  RetrievedChunk,
   RunningModel,
   SearchResult,
   Session,
   Tag,
+  UploadedFile,
   UserRole,
   UserStatus,
 } from "./types";
@@ -134,7 +139,9 @@ export class ApiClient {
       ...this.authHeaders,
       ...((init.headers as Record<string, string>) ?? {}),
     };
-    if (init.body !== undefined && !headers["content-type"]) {
+    // FormData sets its own multipart boundary; letting fetch compute the header is
+    // required for file uploads (POST /api/files, POST .../documents).
+    if (init.body !== undefined && !headers["content-type"] && !(init.body instanceof FormData)) {
       headers["content-type"] = "application/json";
     }
     return fetch(path, { ...init, headers, credentials: "same-origin" });
@@ -427,6 +434,7 @@ export class ApiClient {
     description?: string | null;
     system_prompt?: string | null;
     params?: Record<string, ParamValue> | null;
+    knowledge_ids?: string[];
     fallback_chain?: FallbackEntry[];
     visibility?: CustomModelVisibility;
   }): Promise<CustomModel> {
@@ -440,6 +448,7 @@ export class ApiClient {
       description?: string | null;
       system_prompt?: string | null;
       params?: Record<string, ParamValue> | null;
+      knowledge_ids?: string[];
       fallback_chain?: FallbackEntry[];
       visibility?: CustomModelVisibility;
     },
@@ -449,6 +458,71 @@ export class ApiClient {
 
   deleteCustomModel(id: string): Promise<void> {
     return this.request<void>(`/api/custom-models/${id}`, { method: "DELETE" });
+  }
+
+  // --- files and RAG -------------------------------------------------------------
+
+  async uploadFile(file: File): Promise<UploadedFile> {
+    const form = new FormData();
+    form.append("upload", file);
+    return this.request<UploadedFile>("/api/files", { method: "POST", body: form });
+  }
+
+  deleteFile(fileId: string): Promise<void> {
+    return this.request<void>(`/api/files/${fileId}`, { method: "DELETE" });
+  }
+
+  collections(): Promise<Collection[]> {
+    return this.request<Collection[]>("/api/collections");
+  }
+
+  createCollection(body: {
+    name: string;
+    description?: string | null;
+    embedder_ref?: string;
+    dim?: number;
+    max_tokens?: number;
+    overlap_tokens?: number;
+    visibility?: CollectionVisibility;
+  }): Promise<Collection> {
+    return this.#json("POST", "/api/collections", body);
+  }
+
+  updateCollection(
+    id: string,
+    patch: { name?: string; description?: string | null; visibility?: CollectionVisibility },
+  ): Promise<Collection> {
+    return this.#json("PATCH", `/api/collections/${id}`, patch);
+  }
+
+  deleteCollection(id: string): Promise<void> {
+    return this.request<void>(`/api/collections/${id}`, { method: "DELETE" });
+  }
+
+  documents(collectionId: string): Promise<RagDocument[]> {
+    return this.request<RagDocument[]>(`/api/collections/${collectionId}/documents`);
+  }
+
+  async ingestDocument(
+    collectionId: string,
+    fileId: string,
+    title?: string,
+  ): Promise<{ document: RagDocument; job_id: string }> {
+    const form = new FormData();
+    form.append("file_id", fileId);
+    if (title) form.append("title", title);
+    return this.request<{ document: RagDocument; job_id: string }>(
+      `/api/collections/${collectionId}/documents`,
+      { method: "POST", body: form },
+    );
+  }
+
+  deleteDocument(documentId: string): Promise<void> {
+    return this.request<void>(`/api/documents/${documentId}`, { method: "DELETE" });
+  }
+
+  queryCollection(collectionId: string, query: string, k = 5): Promise<{ items: RetrievedChunk[] }> {
+    return this.#json("POST", `/api/collections/${collectionId}/query`, { query, k });
   }
 
   // --- admin -------------------------------------------------------------------
