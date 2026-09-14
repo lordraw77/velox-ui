@@ -107,6 +107,7 @@ class OllamaProvider:
             "num_thread",
             "num_batch",
             "keep_alive",
+            "think",
         }
     )
 
@@ -509,6 +510,11 @@ class OllamaProvider:
         }
         if request.params.keep_alive is not None:
             body["keep_alive"] = request.params.keep_alive
+        if request.params.think is not None:
+            # A top-level request field, not an ``options`` entry — this is how
+            # reasoning models (qwen3, deepseek-r1) are told to skip or emit their
+            # thinking trace. A model without the capability just ignores it.
+            body["think"] = request.params.think
         if request.json_schema is not None:
             body["format"] = request.json_schema
         return body

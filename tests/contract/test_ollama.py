@@ -187,6 +187,7 @@ async def test_sampling_parameters_reach_the_backend(ollama_server, http_client)
                 repeat_penalty=1.15,
                 stop=("</s>",),
                 keep_alive="10m",
+                think=False,
             ),
         )
     )
@@ -198,6 +199,22 @@ async def test_sampling_parameters_reach_the_backend(ollama_server, http_client)
     assert options["stop"] == ["</s>"]
     assert body["keep_alive"] == "10m"
     assert "top_p" not in options, "unset parameters must not be sent as null"
+    # A top-level field, not an ``options`` entry: this is how Ollama is told to turn
+    # a reasoning model's thinking trace on or off.
+    assert body["think"] is False
+    assert "think" not in options
+
+
+async def test_think_is_unset_by_default(ollama_server, http_client) -> None:
+    """No opinion sent means the model's own default, not "thinking off"."""
+    provider = _provider(ollama_server, http_client)
+    body = provider._encode_request(
+        ChatRequest(
+            model="llama3.2",
+            messages=(ChatMessage(role="user", content="x"),),
+        )
+    )
+    assert "think" not in body
 
 
 async def test_thinking_models_emit_reasoning_separately(ollama_server, http_client) -> None:

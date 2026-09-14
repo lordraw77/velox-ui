@@ -81,6 +81,7 @@
   "params.groupPenalties": "Repetition",
   "params.groupMirostat": "Mirostat",
   "params.groupRuntime": "Runtime and memory",
+  "params.think": "Reasoning. Have the model emit its thinking before the answer, for models that support it.",
   "params.temperature": "Randomness. Lower is more focused and repeatable.",
   "params.top_p": "Sample only from the most likely tokens whose probabilities add up to this.",
   "params.top_k": "Sample only from this many most likely tokens. 0 disables it.",

@@ -37,6 +37,7 @@ export const PARAM_GROUPS: readonly { key: ParamGroup; label: string }[] = [
 ];
 
 export const PARAM_SPECS: readonly ParamSpec[] = [
+  { name: "think", help: "params.think", kind: "bool", group: "sampling" },
   { name: "temperature", help: "params.temperature", kind: "float", group: "sampling", min: 0, max: 5, step: 0.05 },
   { name: "top_p", help: "params.top_p", kind: "float", group: "sampling", min: 0, max: 1, step: 0.01 },
   { name: "top_k", help: "params.top_k", kind: "int", group: "sampling", min: 0, max: 100000, step: 1 },

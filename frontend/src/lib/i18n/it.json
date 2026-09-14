@@ -80,6 +80,7 @@
   "params.groupPenalties": "Ripetizioni",
   "params.groupMirostat": "Mirostat",
   "params.groupRuntime": "Esecuzione e memoria",
+  "params.think": "Ragionamento. Chiede al modello di mostrare il proprio ragionamento prima della risposta, per i modelli che lo supportano.",
   "params.temperature": "Casualità. Più bassa rende le risposte più mirate e ripetibili.",
   "params.top_p": "Campiona solo tra i token più probabili la cui probabilità somma a questo valore.",
   "params.top_k": "Campiona solo tra questo numero di token più probabili. 0 lo disattiva.",

@@ -67,6 +67,7 @@ class ModelParamsInput(msgspec.Struct, forbid_unknown_fields=True, omit_defaults
         None
     )
     cache_prompt: bool | None = None
+    think: bool | None = None
 
     def to_params(self) -> SamplingParams:
         """Convert to the wire-neutral struct adapters consume."""

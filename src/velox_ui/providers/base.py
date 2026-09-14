@@ -206,6 +206,7 @@ class SamplingParams(msgspec.Struct, frozen=True):
     num_batch: int | None = None
     keep_alive: str | None = None
     cache_prompt: bool | None = None
+    think: bool | None = None
 
 
 class ChatRequest(msgspec.Struct, frozen=True):
