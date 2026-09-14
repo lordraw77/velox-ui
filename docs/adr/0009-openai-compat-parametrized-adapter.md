@@ -11,14 +11,20 @@ per backend would duplicate the streaming loop ten times.
 A single `openai_compat` adapter parametrized by a preset: base URL, auth style, header
 set, and a `quirks` table (usage in the final chunk, missing usage entirely, `stop` array
 handling, non-standard role names, `/models` shape). Presets live in
-`providers/presets.toml` and are data, not code. Only Ollama, llama.cpp, Gemini,
-Anthropic, Mistral and Cloudflare's native route get dedicated adapters, because their
-protocols genuinely differ.
+`providers/presets.toml` and are data, not code. Only Ollama and llama.cpp get dedicated
+adapters, because their protocols genuinely differ.
 
 ## Consequences
 Adding LM Studio, vLLM, TGI, TabbyAPI, KoboldCpp, LocalAI, Jan, llamafile or mlx_lm is a
 TOML entry plus a contract-test transcript. A backend with a quirk we have not modelled
 needs a new quirk flag, and a truly incompatible one falls back to a dedicated adapter.
+
+Phase 5 confirmed this further than expected: Gemini and Cloudflare Workers AI both
+publish an official OpenAI-compatible surface, so they are TOML entries too, alongside
+OpenAI itself, Groq, OpenRouter, Mistral and NVIDIA NIM — eight cloud presets for one
+adapter. Anthropic's Messages API is the one exception envisioned here: a different
+endpoint, a named-event SSE envelope, and a required `max_tokens`, so it is the second
+dedicated adapter (ADR-0018).
 
 ## Implementation notes (phase 4)
 The quirks that turned out to matter were narrower than the list above. Usage arrives in

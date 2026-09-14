@@ -146,6 +146,88 @@ sampling = ["top_k", "min_p", "typical_p", "tfs_z", "repeat_penalty", "mirostat"
 rename = { tfs_z = "tfs", repeat_penalty = "repetition_penalty", mirostat = "mirostat_mode" }
 docs_url = "https://github.com/oobabooga/text-generation-webui/wiki/12-%E2%80%90-OpenAI-API"
 
+# --- Cloud (phase 5) --------------------------------------------------------------
+#
+# None of these run on your own hardware, so `local` is explicit `false` rather than
+# left to the address heuristic, and every one of them requires a key: nothing here
+# has a free anonymous tier worth pretending exists.
+
+[openai]
+kind = "openai_compat"
+label = "OpenAI"
+base_url = "https://api.openai.com/v1"
+auth = "required"
+local = false
+docs_url = "https://platform.openai.com/docs/api-reference/chat"
+
+[groq]
+kind = "openai_compat"
+label = "Groq"
+base_url = "https://api.groq.com/openai/v1"
+auth = "required"
+local = false
+docs_url = "https://console.groq.com/docs/api-reference"
+
+[groq.quirks]
+# Groq deprecated `max_tokens` in favour of this field; the old one still works on
+# most models today, but the new one is what their own docs now show.
+max_tokens_field = "max_completion_tokens"
+
+[openrouter]
+kind = "openai_compat"
+label = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+auth = "required"
+local = false
+sampling = ["top_k", "min_p", "repeat_penalty"]
+rename = { repeat_penalty = "repetition_penalty" }
+docs_url = "https://openrouter.ai/docs/api-reference/overview"
+
+[mistral]
+kind = "openai_compat"
+label = "Mistral"
+base_url = "https://api.mistral.ai/v1"
+auth = "required"
+local = false
+docs_url = "https://docs.mistral.ai/api"
+
+[nvidia]
+kind = "openai_compat"
+label = "NVIDIA NIM"
+base_url = "https://integrate.api.nvidia.com/v1"
+auth = "required"
+local = false
+docs_url = "https://docs.api.nvidia.com/nim/reference"
+
+[cloudflare]
+kind = "openai_compat"
+label = "Cloudflare Workers AI"
+# No usable default: the path itself carries your account id
+# (.../accounts/<account_id>/ai/v1), so this asks for the full address rather than
+# offering one that looks real and is not.
+base_url = ""
+auth = "required"
+local = false
+docs_url = "https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/"
+
+[gemini]
+kind = "openai_compat"
+label = "Google Gemini"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+auth = "required"
+local = false
+docs_url = "https://ai.google.dev/gemini-api/docs/openai"
+
+[anthropic]
+# Not an OpenAI-compatible server: this key selects the dedicated adapter in
+# providers/anthropic.py, the one branch registry.py takes on kind rather than preset.
+kind = "anthropic"
+label = "Anthropic"
+base_url = "https://api.anthropic.com/v1"
+auth = "required"
+local = false
+docs_url = "https://docs.anthropic.com/en/api/messages"
+
 [custom]
 kind = "openai_compat"
 label = "Custom OpenAI-compatible"

@@ -60,8 +60,10 @@ Each phase ends working, tested and benchmarked before the next begins.
    and the parametrized OpenAI-compatible adapter with presets.~~ **Done** — downloads
    run as server-side jobs (ADR-0017), providers can be added from the interface with
    encrypted credentials, and conversations open one page at a time.
-5. Cloud providers: Groq, OpenRouter, Mistral, NVIDIA, Cloudflare, Gemini, Anthropic,
-   OpenAI — each with contract tests.
+5. ~~Cloud providers: Groq, OpenRouter, Mistral, NVIDIA, Cloudflare, Gemini, Anthropic,
+   OpenAI — each with contract tests.~~ **Done** — seven of the eight speak the OpenAI
+   protocol and are presets over the phase-4 adapter; Anthropic is a second dedicated
+   adapter ([ADR-0018](../adr/0018-anthropic-dedicated-adapter.md)).
 6. Organization, search, custom models, full multi-user.
 7. RAG.
 8. MCP and tool calling.

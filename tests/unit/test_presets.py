@@ -32,15 +32,49 @@ REQUIRED_LOCAL_BACKENDS = {
     "custom",
 }
 
+REQUIRED_CLOUD_BACKENDS = {
+    "openai",
+    "groq",
+    "openrouter",
+    "mistral",
+    "nvidia",
+    "cloudflare",
+    "gemini",
+    "anthropic",
+}
+
 
 def test_every_required_local_backend_has_a_preset() -> None:
     assert set(load_presets()) >= REQUIRED_LOCAL_BACKENDS
 
 
+def test_every_required_cloud_backend_has_a_preset() -> None:
+    assert set(load_presets()) >= REQUIRED_CLOUD_BACKENDS
+
+
+def test_cloud_presets_are_never_local_and_always_need_a_key() -> None:
+    for key in REQUIRED_CLOUD_BACKENDS:
+        preset = get_preset(key)
+        assert preset is not None
+        assert preset.local is False, key
+        assert preset.auth == "required", key
+        assert preset.discovery_ports == (), key
+
+
+def test_anthropic_uses_its_own_adapter_kind() -> None:
+    # Not an OpenAI-compatible server: the one place this matters is registry._build,
+    # which branches on `kind`, not on preset identity.
+    anthropic = get_preset("anthropic")
+    assert anthropic is not None
+    assert anthropic.kind == "anthropic"
+
+
 def test_openai_compatible_presets_include_the_api_prefix() -> None:
     for preset in load_presets().values():
         if preset.kind == "openai_compat" and preset.base_url:
-            assert preset.base_url.endswith("/v1"), preset.key
+            # Every backend but Gemini puts the OpenAI-compatible surface at /v1;
+            # Gemini's own docs put it at /v1beta/openai/ instead.
+            assert preset.base_url.rstrip("/").endswith(("v1", "openai")), preset.key
 
 
 def test_local_backends_need_no_key() -> None:
@@ -123,6 +157,26 @@ def test_any_preset_is_configurable_from_the_environment(isolated, monkeypatch) 
     assert specs["vllm-0"].credential() == "sk-vllm-secret-9999"
     assert "secret" not in (specs["vllm-0"].credential_hint or "")
     assert "sk-vllm-secret" not in repr(specs["vllm-0"])
+
+
+def test_a_cloud_api_key_alone_is_enough(isolated, monkeypatch) -> None:
+    # VELOX_PROVIDER_GROQ_API_KEY with no _HOSTS: the preset's own default address is
+    # used, exactly as the settings module's docstring promises.
+    monkeypatch.setenv("VELOX_PROVIDER_GROQ_API_KEY", "gsk-secret-1234")
+    monkeypatch.setenv("VELOX_PROVIDER_ANTHROPIC_API_KEY", "sk-ant-secret-5678")
+    specs = {spec.provider_id: spec for spec in config_specs(load_settings().providers)}
+    assert specs["groq-0"].base_url == "https://api.groq.com/openai/v1"
+    assert specs["groq-0"].kind == "openai_compat"
+    assert specs["groq-0"].credential() == "gsk-secret-1234"
+    assert specs["anthropic-0"].kind == "anthropic"
+    assert specs["anthropic-0"].credential() == "sk-ant-secret-5678"
+
+
+def test_cloudflare_needs_both_the_account_url_and_a_key(isolated, monkeypatch) -> None:
+    # The account id lives in the path, so the key alone is not enough to configure it.
+    monkeypatch.setenv("VELOX_PROVIDER_CLOUDFLARE_API_KEY", "cf-secret")
+    with pytest.raises(SettingsError, match="base_url"):
+        load_settings()
 
 
 def test_a_mistyped_preset_variable_fails_loudly(isolated, monkeypatch) -> None:

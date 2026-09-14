@@ -94,17 +94,19 @@ earlier pages as the reader scrolls up. Reading the entire history back takes ab
 ## Providers
 
 One adapter contract, not a collection of special cases. Backends that speak the
-OpenAI protocol share a single parametrized adapter driven by a preset file, so adding
-one is a TOML entry rather than code
-([ADR-0009](docs/adr/0009-openai-compat-parametrized-adapter.md)).
+OpenAI protocol — every cloud provider below but Anthropic — share a single
+parametrized adapter driven by a preset file, so adding one is a TOML entry rather than
+code ([ADR-0009](docs/adr/0009-openai-compat-parametrized-adapter.md)). Anthropic's
+Messages API does not fit that shape and gets its own adapter
+([ADR-0018](docs/adr/0018-anthropic-dedicated-adapter.md)).
 
 | Provider | Adapter | Status |
 |---|---|---|
 | Ollama | native `/api/*` | **shipped** |
 | llama.cpp / `llama-server` | native, with GBNF grammars and prompt-cache reuse | **shipped** |
 | vLLM, LM Studio, TGI, TabbyAPI, KoboldCpp, LocalAI, Jan, llamafile, mlx_lm, Text Generation WebUI | OpenAI-compatible preset | **shipped** |
-| Groq, OpenRouter, NVIDIA NIM, OpenAI | OpenAI-compatible preset | phase 5 |
-| Google Gemini, Anthropic, Mistral, Cloudflare Workers AI | native | phase 5 |
+| OpenAI, Groq, OpenRouter, Mistral, NVIDIA NIM, Cloudflare Workers AI, Google Gemini | OpenAI-compatible preset | **shipped** |
+| Anthropic | native `/v1/messages` | **shipped** |
 | Custom OpenAI-compatible | manual | **shipped** |
 
 The contract, the capability model and the error taxonomy are specified in

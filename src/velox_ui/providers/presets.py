@@ -61,7 +61,7 @@ class PresetQuirks(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
 class Preset(msgspec.Struct, frozen=True, forbid_unknown_fields=True):
     """One entry of the catalogue. Field meanings are documented in ``presets.toml``."""
 
-    kind: Literal["ollama", "llamacpp", "openai_compat"]
+    kind: Literal["ollama", "llamacpp", "openai_compat", "anthropic"]
     label: str
     base_url: str = ""
     auth: Literal["none", "optional", "required"] = "optional"

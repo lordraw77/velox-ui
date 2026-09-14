@@ -9,8 +9,8 @@ abstraction has been bypassed and the change is wrong.
 
 **1. It speaks the OpenAI protocol.** Add a preset to `providers/presets.toml`. No
 Python. This covers vLLM, LM Studio, TGI, TabbyAPI, KoboldCpp, LocalAI, Jan, llamafile,
-mlx_lm, Groq, OpenRouter, NVIDIA NIM and OpenAI itself
-([ADR-0009](adr/0009-openai-compat-parametrized-adapter.md)).
+mlx_lm, OpenAI, Groq, OpenRouter, Mistral, NVIDIA NIM, Cloudflare Workers AI and Gemini's
+own OpenAI-compatible route ([ADR-0009](adr/0009-openai-compat-parametrized-adapter.md)).
 
 ```toml
 [lmstudio]
@@ -35,9 +35,10 @@ one it does not know. The preset is immediately configurable from the environmen
 quirk flag rather than a new adapter. A quirk is data; a second adapter is a second
 streaming loop to keep correct forever.
 
-**3. Its protocol genuinely differs.** Write an adapter. Ollama, llama.cpp, Gemini,
-Anthropic, Mistral and Cloudflare's native route qualify; each has something the OpenAI
-shape cannot express — model management, GBNF grammars, a different content model.
+**3. Its protocol genuinely differs.** Write an adapter. Ollama, llama.cpp and Anthropic
+qualify so far; each has something the OpenAI shape cannot express — model management,
+GBNF grammars, or, for Anthropic, an entirely different request and streaming envelope
+([ADR-0018](adr/0018-anthropic-dedicated-adapter.md)).
 
 ## Writing an adapter
 

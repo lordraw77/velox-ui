@@ -40,7 +40,7 @@ __all__ = ["ProviderKind", "ProviderRegistry", "ProviderSpec", "ResolvedModel", 
 
 _MODEL_CACHE_TTL_S = 30.0
 
-type ProviderKind = Literal["ollama", "llamacpp", "openai_compat"]
+type ProviderKind = Literal["ollama", "llamacpp", "openai_compat", "anthropic"]
 type ProviderOrigin = Literal["config", "autodiscovered", "ui"]
 
 
@@ -197,6 +197,10 @@ class ProviderRegistry:
             from velox_ui.providers.llamacpp import LlamaCppProvider
 
             return LlamaCppProvider(spec.provider_id, spec.base_url, client, api_key=api_key)
+        if spec.kind == "anthropic":
+            from velox_ui.providers.anthropic import AnthropicProvider
+
+            return AnthropicProvider(spec.provider_id, spec.base_url, client, api_key=api_key)
 
         from velox_ui.providers.openai_compat import OpenAICompatProvider
         from velox_ui.providers.presets import get_preset

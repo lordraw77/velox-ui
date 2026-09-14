@@ -9,14 +9,12 @@ All structs are `msgspec.Struct` (frozen where sensible): no Pydantic validation
 streaming loop.
 
 ```python
-class ProviderKind(str, Enum):
-    OLLAMA = "ollama"
-    LLAMACPP = "llamacpp"
-    OPENAI_COMPAT = "openai_compat"
-    GEMINI = "gemini"
-    ANTHROPIC = "anthropic"
-    MISTRAL = "mistral"
-    CLOUDFLARE = "cloudflare"
+# As implemented (registry.py), this is a type alias over a Literal, not an Enum —
+# msgspec structs read plain strings straight off the wire without a conversion step.
+# Only two kinds carry a dedicated adapter; every cloud backend that speaks OpenAI's
+# protocol, Gemini and Cloudflare included, is a preset over `openai_compat` instead
+# (ADR-0009). Anthropic is the one cloud kind with its own adapter (ADR-0018).
+type ProviderKind = Literal["ollama", "llamacpp", "openai_compat", "anthropic"]
 
 
 class ProviderConfig(Struct, frozen=True):
@@ -222,8 +220,10 @@ def build_provider(cfg: ProviderConfig) -> Provider: ...
 
 `registry.py` maps `ProviderKind` to a factory and merges factories contributed by
 plugins through the `velox_ui.providers` entry-point group. Cloud providers that speak
-OpenAI's protocol (OpenAI, Groq, OpenRouter, NVIDIA, and Cloudflare's compatible route)
-are *presets* over `openai_compat`, not separate adapters:
+OpenAI's protocol — OpenAI, Groq, OpenRouter, Mistral, NVIDIA NIM, Cloudflare Workers AI
+and Gemini's own OpenAI-compatible route — are *presets* over `openai_compat`, not
+separate adapters. Anthropic's Messages API does not fit that shape (ADR-0018), so it
+is the one cloud backend with a dedicated adapter, `providers/anthropic.py`.
 
 ```toml
 # providers/presets.toml (excerpt; the file documents every field)
@@ -257,10 +257,9 @@ preset entry when it is OpenAI-compatible — documented in `docs/adding-a-provi
 
 ## Contract tests
 
-Every adapter runs the same parametrized suite in `tests/contract/` against a fake
-server that replays a recorded byte-level transcript of that backend's streaming
-format (including its quirks: Ollama's newline-delimited JSON, llama.cpp's `data:`
-frames and final `timings`, Gemini's `streamGenerateContent` array chunking,
-Anthropic's `content_block_delta` events, Groq's usage-only final chunk). The suite
-asserts: first delta before any buffering, correct usage extraction, error mapping,
-cancellation propagation, and that no response body is ever fully accumulated.
+Every adapter has its own contract suite in `tests/contract/` against a fake server that
+replays that backend's real streaming format (Ollama's newline-delimited JSON,
+llama.cpp's `data:` frames and final `timings`, the OpenAI-compatible chunk shape with
+its usage-only final frame and renamed parameters, Anthropic's named `content_block_delta`
+events). Each asserts: first delta before any buffering, correct usage extraction, error
+mapping, and that no response body is ever fully accumulated.

@@ -89,10 +89,16 @@ autodiscover = true
 
 # Any backend from the preset catalogue (src/velox_ui/providers/presets.toml): ollama,
 # llamacpp, lmstudio, vllm, tgi, tabbyapi, koboldcpp, localai, jan, llamafile, mlx_lm,
-# textgen_webui, custom.
+# textgen_webui, custom — and the cloud presets: openai, groq, openrouter, mistral,
+# nvidia, cloudflare, gemini, anthropic. Every one of the cloud presets needs an
+# api_key; cloudflare also needs base_url, since its address carries your account id.
 #
 # [[providers.endpoints]]
 # preset = "vllm"
 # base_url = "http://gpu-box.lan:8000/v1"   # empty: the preset's default address
 # api_key = ""                              # only if the server was started with one
 # id = "vllm"                               # first half of model references
+#
+# [[providers.endpoints]]
+# preset = "anthropic"
+# api_key = ""                              # required; empty: the preset's default address
