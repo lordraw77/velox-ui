@@ -121,9 +121,9 @@
             <tbody>
               {#each users as user (user.id)}
                 <tr>
-                  <td class="mono">{user.email}</td>
-                  <td>{user.name}</td>
-                  <td>
+                  <td class="mono" data-label={app.t("admin.email")}>{user.email}</td>
+                  <td data-label={app.t("admin.name")}>{user.name}</td>
+                  <td data-label={app.t("admin.role")}>
                     <select
                       value={user.role}
                       disabled={user.id === app.session?.user_id}
@@ -133,8 +133,8 @@
                       <option value="admin">{app.t("admin.roleAdmin")}</option>
                     </select>
                   </td>
-                  <td><span class="badge" class:badge-danger={user.status === "disabled"}>{app.t(STATUS_LABEL[user.status])}</span></td>
-                  <td class="hint">{user.last_seen_at ? formatDate(user.last_seen_at, app.locale) : app.t("admin.never")}</td>
+                  <td data-label={app.t("admin.status")}><span class="badge" class:badge-danger={user.status === "disabled"}>{app.t(STATUS_LABEL[user.status])}</span></td>
+                  <td class="hint" data-label={app.t("admin.lastSeen")}>{user.last_seen_at ? formatDate(user.last_seen_at, app.locale) : app.t("admin.never")}</td>
                   <td class="row-actions">
                     <button
                       class="btn btn-ghost"

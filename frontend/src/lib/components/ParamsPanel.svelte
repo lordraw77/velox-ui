@@ -166,7 +166,9 @@
 
 <style>
   .params {
-    max-height: 60vh;
+    /* `dvh`, not `vh`: on iOS `vh` is the *large* viewport, so 60vh of it can be
+       taller than what is actually visible with the URL bar showing. */
+    max-height: 60dvh;
     overflow-y: auto;
     padding: 0.75rem 1rem 1rem;
     background: var(--bg-raised);

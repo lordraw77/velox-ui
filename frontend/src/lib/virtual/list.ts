@@ -109,6 +109,30 @@ export class VirtualList {
   }
 
   /**
+   * Forget every measured height and fall back to estimates.
+   *
+   * Heights are measured at whatever width the viewport had at the time. Change
+   * that width — a rotation, the keyboard opening, a desktop window resize — and
+   * every measurement is stale, but only the handful of items currently rendered
+   * will re-measure themselves. The rest keep heights from the old width, so the
+   * prefix sums (and with them the scroll position) drift.
+   *
+   * Dropping everything back to the running estimate is deliberately blunt: the
+   * items on screen re-measure immediately on the next frame, and the ones off
+   * screen were going to be wrong either way. Note this resets the estimate to its
+   * base, since the average it was derived from was itself measured at the old
+   * width.
+   */
+  invalidateMeasurements(): void {
+    if (this.#measuredCount === 0) return;
+    this.#measuredCount = 0;
+    this.#measuredTotal = 0;
+    this.#measured.fill(false);
+    this.#heights.fill(this.#baseEstimate);
+    this.#markDirty(0);
+  }
+
+  /**
    * Record a measured height.
    *
    * @returns The pixel delta this measurement introduced above the item, which the

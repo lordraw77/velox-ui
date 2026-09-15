@@ -171,3 +171,60 @@ describe("VirtualList", () => {
     });
   });
 });
+
+describe("VirtualList.invalidateMeasurements", () => {
+  it("drops measured heights back to the base estimate", () => {
+    const list = new VirtualList({ estimatedItemHeight: 100, overscan: 0 });
+    list.setCount(4);
+    list.measure(0, 40);
+    list.measure(1, 800);
+    expect(list.totalHeight).not.toBe(400);
+
+    list.invalidateMeasurements();
+
+    // Back to four unmeasured items at the base estimate — not at the average of
+    // what was measured, which was itself measured at the stale width.
+    expect(list.estimate).toBe(100);
+    expect(list.totalHeight).toBe(400);
+    expect(list.offsetOf(2)).toBe(200);
+  });
+
+  it("keeps offsets consistent after re-measuring at the new width", () => {
+    const list = new VirtualList({ estimatedItemHeight: 100, overscan: 0 });
+    list.setCount(3);
+    list.measure(0, 500); // measured wide: one line
+    list.measure(1, 500);
+    list.measure(2, 500);
+
+    list.invalidateMeasurements();
+    // Narrower viewport: the same messages now wrap to twice the height.
+    list.measure(0, 1000);
+    list.measure(1, 1000);
+    list.measure(2, 1000);
+
+    expect(list.totalHeight).toBe(3000);
+    expect(list.offsetOf(1)).toBe(1000);
+    expect(list.offsetOf(2)).toBe(2000);
+  });
+
+  it("leaves an unmeasured list untouched", () => {
+    const list = new VirtualList({ estimatedItemHeight: 100, overscan: 0 });
+    list.setCount(5);
+    list.invalidateMeasurements();
+    expect(list.totalHeight).toBe(500);
+  });
+
+  it("still anchors to the bottom after invalidating", () => {
+    const list = new VirtualList({ estimatedItemHeight: 100, overscan: 0 });
+    list.setCount(10);
+    for (let index = 0; index < 10; index++) list.measure(index, 200);
+
+    list.invalidateMeasurements();
+    for (let index = 0; index < 10; index++) list.measure(index, 50);
+
+    // 10 items of 50px = 500px of content in a 300px viewport.
+    const bottom = list.bottomScrollTop(300);
+    expect(bottom).toBe(200);
+    expect(list.isAtBottom(bottom, 300)).toBe(true);
+  });
+});

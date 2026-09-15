@@ -196,7 +196,9 @@
     width: 100%;
     max-width: var(--content-width);
     margin: 0 auto;
-    padding: 0.75rem 2.5rem 1rem;
+    /* The bottom padding also clears the iPhone home indicator; `max` keeps the
+       desktop spacing where the inset is zero. */
+    padding: 0.75rem var(--gutter) max(1rem, env(safe-area-inset-bottom));
   }
 
   textarea {
@@ -232,7 +234,7 @@
     width: 100%;
     max-width: var(--content-width);
     margin: 0 auto;
-    padding: 0 2.5rem;
+    padding: 0 var(--gutter);
   }
 
   .image-form {
@@ -261,5 +263,19 @@
     max-height: 160px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
+  }
+
+  /*
+   * At 390px the gutter plus a labelled send button plus up to three icon
+   * buttons overflows the row. The labels go; the icons stay.
+   */
+  @media (width <= 900px) {
+    .composer {
+      gap: 0.35rem;
+    }
+
+    button {
+      padding-inline: 0.6rem;
+    }
   }
 </style>

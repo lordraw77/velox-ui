@@ -92,8 +92,23 @@
   /** Track the viewport's own size; a window resize changes what is visible. */
   $effect(() => {
     if (!viewport) return;
+    let lastWidth = viewport.clientWidth;
     const observer = new ResizeObserver(() => {
       viewportHeight = viewport?.clientHeight ?? 0;
+      const width = viewport?.clientWidth ?? lastWidth;
+      if (width === lastWidth) return;
+      // A width change invalidates every measured height — messages reflow, so
+      // the cached heights describe a layout that no longer exists. Only the
+      // rendered items would otherwise re-measure, leaving the rest wrong and
+      // the scroll position drifting (rotating a phone mid-conversation).
+      lastWidth = width;
+      list.invalidateMeasurements();
+      revision += 1;
+      if (anchored && viewport) {
+        queueMicrotask(() => {
+          if (viewport && anchored) viewport.scrollTop = list.bottomScrollTop(viewport.clientHeight);
+        });
+      }
     });
     observer.observe(viewport);
     viewportHeight = viewport.clientHeight;
@@ -171,7 +186,9 @@
     width: 100%;
     max-width: var(--content-width);
     margin: 0 auto;
-    padding: 0 1.25rem;
+    /* Same gutter as the composer and the status line, so message text lines up
+       with the input below it at every width. */
+    padding: 0 var(--gutter);
   }
 
   .window {

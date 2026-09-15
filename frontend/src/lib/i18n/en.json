@@ -79,6 +79,8 @@
   "nav.models": "Models",
   "nav.providers": "Providers",
   "nav.back": "Back to chat",
+  "nav.openMenu": "Open menu",
+  "nav.closeMenu": "Close menu",
   "nav.search": "Search",
   "nav.customModels": "Custom models",
   "nav.admin": "Admin",

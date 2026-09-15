@@ -13,7 +13,18 @@
   import { LOCALES } from "$lib/i18n";
   import ModelPicker from "./ModelPicker.svelte";
 
+  interface Props {
+    /** Open the navigation drawer. Only reachable below the drawer breakpoint. */
+    onmenu?: () => void;
+  }
+
+  let { onmenu }: Props = $props();
+
   let health = $state<Record<string, HealthState>>({});
+
+  let offline = $derived(
+    Object.values(health).filter((state) => state === "down").length
+  );
 
   const THEMES = ["auto", "light", "dark"] as const;
 
@@ -56,6 +67,17 @@
 </script>
 
 <header>
+  <button
+    class="btn btn-ghost btn-icon menu"
+    onclick={() => onmenu?.()}
+    aria-label={app.t("nav.openMenu")}
+    title={app.t("nav.openMenu")}
+    type="button"
+    data-testid="nav-menu"
+  >
+    ☰
+  </button>
+
   <ModelPicker />
 
   <div class="right">
@@ -66,6 +88,20 @@
         </span>
       {/each}
     </div>
+
+    <!--
+      The per-provider strip is several badges tall on a phone, which costs more
+      chat height than it is worth. Below the breakpoint it collapses to a single
+      summary badge; the full detail is one tap away under Providers.
+    -->
+    <span
+      class="badge health-summary"
+      class:badge-offline={offline > 0}
+      class:badge-local={offline === 0}
+      title={app.t("providers.title")}
+    >
+      {offline > 0 ? `${offline} ${app.t("providers.offline")}` : app.t("providers.online")}
+    </span>
 
     {#if app.model}
       <button
@@ -81,6 +117,7 @@
     {/if}
 
     <select
+      class="locale"
       value={app.locale}
       onchange={(event) => app.setLocale((event.currentTarget as HTMLSelectElement).value as Locale)}
       aria-label="Language"
@@ -101,7 +138,7 @@
     </button>
 
     {#if app.session}
-      <button class="btn btn-ghost" onclick={() => app.signOut()} type="button">
+      <button class="btn btn-ghost signout" onclick={() => app.signOut()} type="button">
         {app.t("auth.signOut")}
       </button>
     {/if}
@@ -125,6 +162,40 @@
     flex-wrap: wrap;
     gap: 0.4rem;
     align-items: center;
+  }
+
+  /* Both are drawer-mode affordances; the desktop layout has a permanent
+     sidebar and room for the full per-provider health strip. */
+  .menu,
+  .health-summary {
+    display: none;
+  }
+
+  @media (width <= 900px) {
+    header {
+      gap: 0.4rem;
+      padding: 0.45rem 0.6rem;
+    }
+
+    .menu {
+      display: inline-flex;
+      font-size: 1.1rem;
+    }
+
+    .health {
+      display: none;
+    }
+
+    .health-summary {
+      display: inline-flex;
+    }
+
+    /* The locale picker and sign-out are rare, deliberate actions; they live
+       under Admin/settings reach rather than competing for the top bar. */
+    .locale,
+    .signout {
+      display: none;
+    }
   }
 
   .open {

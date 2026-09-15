@@ -20,6 +20,7 @@
   import StatusLine from "$lib/components/StatusLine.svelte";
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
+  import { trackVisualViewport } from "$lib/viewport";
 
   type View =
     | "chat"
@@ -68,6 +69,7 @@
 
   function select(id: string | null): void {
     view = "chat";
+    closeDrawer();
     if (id === null) {
       conversation.reset();
       history.replaceState(null, "", "#");
@@ -78,6 +80,7 @@
   }
 
   function navigate(target: Exclude<View, "chat">): void {
+    closeDrawer();
     location.hash = `#/${target}`;
   }
 
@@ -91,18 +94,65 @@
   }
 
   let canSend = $derived(app.modelRef !== null);
+
+  // Only meaningful below the drawer breakpoint; above it the sidebar is always
+  // on screen and this state is simply never read.
+  let drawerOpen = $state(false);
+  // Mirrors the CSS breakpoint. Needed in JS, not just CSS, because an
+  // off-canvas drawer must also leave the focus order — which is an attribute,
+  // not a style.
+  let narrow = $state(false);
+
+  $effect(() => trackVisualViewport());
+
+  $effect(() => {
+    const query = window.matchMedia("(width <= 900px)");
+    const sync = () => {
+      narrow = query.matches;
+      if (!narrow) drawerOpen = false;
+    };
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  });
+
+  function closeDrawer(): void {
+    drawerOpen = false;
+  }
+
+  function onShellKeydown(event: KeyboardEvent): void {
+    if (event.key === "Escape" && drawerOpen) closeDrawer();
+  }
 </script>
+
+<svelte:window onkeydown={onShellKeydown} />
 
 {#if !app.booted}
   <div class="boot"><span class="spinner"></span></div>
 {:else if !app.authenticated}
   <AuthGate />
 {:else}
-  <div class="shell">
-    <Sidebar onselect={select} onnavigate={navigate} current={view} />
+  <div class="shell" class:drawer-open={drawerOpen}>
+    <Sidebar
+      onselect={select}
+      onnavigate={navigate}
+      current={view}
+      inert={narrow && !drawerOpen}
+      onclose={closeDrawer}
+    />
+
+    <!-- Only hit-testable while the drawer is open (see `.backdrop` below), so it
+         never intercepts clicks on the desktop layout. -->
+    <button
+      class="backdrop"
+      aria-label={app.t("nav.closeMenu")}
+      tabindex={drawerOpen ? 0 : -1}
+      onclick={closeDrawer}
+      type="button"
+    ></button>
 
     <main>
-      <Header />
+      <Header onmenu={() => (drawerOpen = true)} />
 
       {#if app.error}
         <ErrorBanner error={app.error} ondismiss={() => app.dismissError()} />
@@ -187,7 +237,10 @@
 <style>
   .shell {
     display: flex;
-    height: 100%;
+    /* `--viewport-height` is set by `lib/viewport.ts` only while a visual
+       viewport is reported (i.e. the keyboard is up on iOS); otherwise this
+       falls back to the dynamic viewport height. */
+    height: var(--viewport-height, 100dvh);
     overflow: hidden;
   }
 
@@ -226,12 +279,49 @@
     width: 100%;
     max-width: var(--content-width);
     margin: 0 auto;
-    padding: 0 2.5rem;
+    padding: 0 var(--gutter);
   }
 
-  @media (width <= 720px) {
-    .shell {
-      flex-direction: column;
+  /* Inert on the desktop layout: no size, not focusable, nothing to click. */
+  .backdrop {
+    display: none;
+  }
+
+  /*
+   * Below the breakpoint the sidebar leaves the flex flow and becomes an
+   * off-canvas drawer. It stays mounted and is moved with `transform` rather
+   * than unmounted, because its conversation list holds keyset-pagination
+   * scroll state that would be thrown away and re-fetched on every open.
+   */
+  @media (width <= 900px) {
+    .shell :global(aside) {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 20;
+      width: min(var(--sidebar-width), 84vw);
+      transform: translateX(-100%);
+      transition: transform 0.18s ease;
+      box-shadow: var(--shadow);
+    }
+
+    .shell.drawer-open :global(aside) {
+      transform: translateX(0);
+    }
+
+    .shell.drawer-open .backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgb(0 0 0 / 40%);
+      border: none;
+    }
+  }
+
+  /* The drawer slides; honour a reduced-motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    .shell :global(aside) {
+      transition: none;
     }
   }
 </style>

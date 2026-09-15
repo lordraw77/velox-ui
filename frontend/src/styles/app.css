@@ -48,6 +48,14 @@
 
   --sidebar-width: 268px;
   --content-width: 46rem;
+
+  /* The horizontal page gutter shared by the composer, the status line and the
+     message content, so they stay aligned with each other at every width. It is
+     the one knob the narrow layout turns down. */
+  --gutter: 2.5rem;
+  /* iOS' minimum comfortable tap target. Applied under `pointer: coarse` only,
+     so a mouse keeps the denser desktop controls. */
+  --tap-min: 44px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -131,6 +139,10 @@ body {
 
 #app {
   height: 100%;
+  /* Tracks Safari's dynamic viewport, so the layout does not keep a strip of
+     dead space under the chat when the URL bar retracts. The `100%` above stays
+     as the fallback for browsers without `dvh`. */
+  height: 100dvh;
 }
 
 button {
@@ -565,4 +577,118 @@ table.data td.row-actions {
   display: table-cell;
   text-align: right;
   white-space: nowrap;
+}
+
+/* --- touch and narrow viewports --------------------------------------------- */
+
+/*
+ * Two separate axes, deliberately not conflated:
+ *
+ * `pointer: coarse` is about the *input device* — a finger needs a bigger
+ * target and cannot hover, regardless of how wide the screen is (an iPad in
+ * landscape is 1024px and still a touch device).
+ *
+ * `width <= 900px` is about *space* — it drives the drawer and the reflow. The
+ * breakpoint sits above every iPhone in landscape (932px at the widest) and
+ * above iPad portrait (768px), so those get the drawer, while iPad landscape
+ * (1024px) keeps the persistent sidebar.
+ */
+
+@media (pointer: coarse) {
+  .btn {
+    min-height: var(--tap-min);
+  }
+
+  .btn-icon {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+  }
+
+  /*
+   * Safari zooms the page whenever a focused control's text is under 16px, and
+   * never zooms back out. Every input in this app was below that line, so
+   * tapping any of them left the user stranded at 1.4x. The desktop sizes are
+   * untouched — this only applies where there is a touch pointer.
+   */
+  input,
+  select,
+  textarea,
+  .field input,
+  .field select,
+  .field textarea {
+    font-size: 16px;
+  }
+
+  /*
+   * Row actions are revealed on hover at a desk. There is no hover on a
+   * touchscreen, so without this the pin/archive/delete buttons are present,
+   * focusable and completely invisible.
+   */
+  .row .action,
+  .action {
+    opacity: 1;
+  }
+}
+
+@media (width <= 900px) {
+  :root {
+    --gutter: 1rem;
+  }
+
+  .panel {
+    padding: 0.75rem 0.75rem 2rem;
+  }
+
+  /*
+   * Data tables become stacked cards: one block per row, each cell labelled
+   * from its `data-label`. `.table-wrap`'s horizontal scroll keeps working for
+   * any table that has not been given labels yet, so this degrades rather than
+   * breaks.
+   */
+  table.data,
+  table.data tbody,
+  table.data tr,
+  table.data td {
+    display: block;
+  }
+
+  table.data thead {
+    display: none;
+  }
+
+  table.data tr {
+    padding: 0.6rem 0.7rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  table.data td {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0.2rem 0;
+    border: none;
+  }
+
+  table.data td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  /* Overrides the desktop rule that keeps an actions cell a non-wrapping
+     table-cell; inside a stacked card it is just another block that wraps. */
+  table.data td.row-actions {
+    display: flex;
+    justify-content: flex-start;
+    white-space: normal;
+  }
+
+  .title-row {
+    flex-wrap: wrap;
+  }
 }

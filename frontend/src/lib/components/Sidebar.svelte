@@ -30,9 +30,16 @@
     onnavigate: (view: Exclude<View, "chat">) => void;
     /** The view currently shown, to mark its entry. */
     current: string;
+    /**
+     * Whether the off-canvas contents should be taken out of the focus order —
+     * true only when the layout is in drawer mode and the drawer is closed.
+     */
+    inert?: boolean;
+    /** Close the drawer. Called after anything that navigates away. */
+    onclose?: () => void;
   }
 
-  let { onselect, onnavigate, current }: Props = $props();
+  let { onselect, onnavigate, current, inert = false, onclose }: Props = $props();
 
   async function remove(id: string, event: MouseEvent): Promise<void> {
     event.stopPropagation();
@@ -105,10 +112,23 @@
   }
 </script>
 
-<aside>
+<!-- `inert` only when the drawer is closed *and* we are actually in drawer mode:
+     off-canvas content must not be focusable, but the permanent desktop sidebar
+     is never inert. The caller decides, since it owns the media query. -->
+<aside inert={inert}>
   <div class="head">
     <button class="btn btn-primary new" onclick={() => onselect(null)} type="button">
       {app.t("chat.newChat")}
+    </button>
+    <!-- Drawer-only: hidden above the breakpoint, where the sidebar is permanent. -->
+    <button
+      class="btn btn-ghost btn-icon close"
+      onclick={() => onclose?.()}
+      aria-label={app.t("nav.closeMenu")}
+      title={app.t("nav.closeMenu")}
+      type="button"
+    >
+      ×
     </button>
   </div>
 
@@ -228,12 +248,20 @@
         {app.t("nav.admin")}
       </button>
     {/if}
+    <!-- Drawer-only: the header carries sign-out on the desktop layout, but hides
+         it at narrow widths, so it has to remain reachable from somewhere. -->
+    {#if app.session}
+      <button class="btn btn-ghost signout" onclick={() => app.signOut()} type="button">
+        {app.t("auth.signOut")}
+      </button>
+    {/if}
   </div>
 </aside>
 
 <style>
   aside {
     display: flex;
+    flex: none;
     flex-direction: column;
     width: var(--sidebar-width);
     background: var(--bg-sunken);
@@ -241,11 +269,22 @@
   }
 
   .head {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
     padding: 0.75rem;
     border-bottom: 1px solid var(--border);
   }
 
+  /* Both belong to the drawer only: the permanent sidebar has nothing to close,
+     and the header still carries sign-out at desktop widths. */
+  .close,
+  .signout {
+    display: none;
+  }
+
   .new {
+    flex: 1;
     width: 100%;
   }
 
@@ -349,5 +388,31 @@
   .empty {
     padding: 0.6rem 0.5rem;
     text-align: center;
+  }
+
+  @media (width <= 900px) {
+    .close {
+      display: inline-flex;
+      font-size: 1.2rem;
+    }
+
+    .signout {
+      display: inline-flex;
+      grid-column: 1 / -1;
+    }
+
+    /*
+     * The eight nav entries wrap into ragged rows when they are flex items with
+     * `flex: 1`. In the drawer there is room to give them an even two-column
+     * grid instead, which also makes each one a comfortably large target.
+     */
+    .foot {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .foot .btn {
+      justify-content: flex-start;
+    }
   }
 </style>

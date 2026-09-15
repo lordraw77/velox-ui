@@ -245,10 +245,10 @@
                 <tbody>
                   {#each running as model (model.name)}
                     <tr>
-                      <td class="mono">{model.name}</td>
-                      <td>{formatBytes(model.size_bytes)}</td>
-                      <td>{processor(model)}</td>
-                      <td>{model.context_length ?? ""}</td>
+                      <td class="mono" data-label={app.t("local.colName")}>{model.name}</td>
+                      <td data-label={app.t("local.colMemory")}>{formatBytes(model.size_bytes)}</td>
+                      <td data-label={app.t("local.colProcessor")}>{processor(model)}</td>
+                      <td data-label={app.t("local.colContext")}>{model.context_length ?? ""}</td>
                       <td class="hint">
                         {#if model.busy !== null}{app.t(model.busy ? "local.busy" : "local.idle")}{/if}
                         {expiry(model)}
@@ -301,12 +301,12 @@
               <tbody>
                 {#each installed as model (model.name)}
                   <tr>
-                    <td class="mono">{model.name}</td>
-                    <td>{model.parameter_size ?? ""}</td>
-                    <td>{model.quantization ?? ""}</td>
-                    <td>{formatBytes(model.size_bytes)}</td>
-                    <td>{model.context_window ?? ""}</td>
-                    <td class="hint">{formatDate(model.modified_at_ms, app.locale)}</td>
+                    <td class="mono" data-label={app.t("local.colName")}>{model.name}</td>
+                    <td data-label={app.t("local.colParams")}>{model.parameter_size ?? ""}</td>
+                    <td data-label={app.t("local.colQuant")}>{model.quantization ?? ""}</td>
+                    <td data-label={app.t("local.colSize")}>{formatBytes(model.size_bytes)}</td>
+                    <td data-label={app.t("local.colContext")}>{model.context_window ?? ""}</td>
+                    <td class="hint" data-label={app.t("local.colModified")}>{formatDate(model.modified_at_ms, app.locale)}</td>
                     <td class="row-actions">
                       <button class="btn btn-ghost" onclick={() => useInChat(model.name)} type="button">{app.t("local.useInChat")}</button>
                       {#if group?.features.includes("show")}
@@ -428,7 +428,9 @@
 
   .detail-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    /* 14rem, not 18: at 390px minus the panel gutters, an 18rem track is wider
+       than the column it has to fit into and overflows. */
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
     gap: 1rem;
   }
 

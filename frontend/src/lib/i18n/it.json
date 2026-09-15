@@ -78,6 +78,8 @@
   "nav.models": "Modelli",
   "nav.providers": "Provider",
   "nav.back": "Torna alla chat",
+  "nav.openMenu": "Apri il menu",
+  "nav.closeMenu": "Chiudi il menu",
   "nav.search": "Cerca",
   "nav.customModels": "Modelli personalizzati",
   "nav.admin": "Amministrazione",
