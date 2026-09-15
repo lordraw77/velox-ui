@@ -22,6 +22,7 @@
     | "custom-models"
     | "knowledge"
     | "mcp"
+    | "plugins"
     | "admin";
 
   interface Props {
@@ -220,6 +221,9 @@
       {app.t("nav.mcp")}
     </button>
     {#if app.isAdmin}
+      <button class="btn btn-ghost" class:active={current === "plugins"} onclick={() => onnavigate("plugins")} type="button" data-testid="nav-plugins">
+        {app.t("nav.plugins")}
+      </button>
       <button class="btn btn-ghost" class:active={current === "admin"} onclick={() => onnavigate("admin")} type="button" data-testid="nav-admin">
         {app.t("nav.admin")}
       </button>

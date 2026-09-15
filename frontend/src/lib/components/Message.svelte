@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
   import { conversation, type RenderedMessage } from "$lib/stores/conversation.svelte";
+  import { api } from "$lib/api/client";
   import { app } from "$lib/stores/app.svelte";
   import Markdown from "./Markdown.svelte";
   import Metrics from "./Metrics.svelte";
@@ -19,6 +20,23 @@
 
   let { message, onmeasure }: Props = $props();
   let approving = $state(false);
+  let speaking = $state(false);
+
+  async function speak(): Promise<void> {
+    if (speaking) return;
+    speaking = true;
+    try {
+      const audio = await api.speak(message.content);
+      const url = URL.createObjectURL(audio);
+      const player = new Audio(url);
+      player.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+      await player.play();
+    } catch (error) {
+      app.report(error);
+    } finally {
+      speaking = false;
+    }
+  }
 
   async function respond(approved: boolean): Promise<void> {
     const call = message.pendingApproval;
@@ -62,6 +80,19 @@
     {/if}
     {#if message.status === "stopped"}
       <span class="badge">{app.t("status.stopped")}</span>
+    {/if}
+    {#if !isUser && app.voiceEnabled && message.content}
+      <button
+        class="btn btn-ghost btn-icon speak"
+        disabled={speaking}
+        onclick={speak}
+        title={app.t("chat.speak")}
+        aria-label={app.t("chat.speak")}
+        type="button"
+        data-testid="speak"
+      >
+        {speaking ? "…" : "🔊"}
+      </button>
     {/if}
   </header>
 
@@ -253,6 +284,11 @@
 
   .badge.danger {
     color: var(--danger);
+  }
+
+  .speak {
+    margin-left: auto;
+    font-size: 0.9rem;
   }
 
   .approval {

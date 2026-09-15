@@ -448,3 +448,23 @@ export interface ToolTraceEntry {
   ok: boolean;
   content: string;
 }
+
+// --- plugins: images and voice (phase 10) -------------------------------------------
+
+export type PluginKind = "images" | "voice";
+
+export interface PluginInfo {
+  name: string;
+  kind: PluginKind;
+  enabled: boolean;
+  configured: boolean;
+  description: string;
+  base_url: string | null;
+  model: string | null;
+  auth_hint: string | null;
+}
+
+export interface GeneratedImage {
+  file_id: string;
+  content_type: string;
+}

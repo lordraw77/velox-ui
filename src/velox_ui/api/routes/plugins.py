@@ -11,7 +11,7 @@ from typing import get_args
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from velox_ui.api.deps import AdminPrincipal, State
+from velox_ui.api.deps import AdminPrincipal, CurrentPrincipal, State
 from velox_ui.db.repositories.plugin_config import PluginConfigRepository
 from velox_ui.errors import NotFoundError
 from velox_ui.plugins.spec import PluginKind
@@ -57,8 +57,13 @@ def _valid_kind(name: str) -> PluginKind:
 
 
 @router.get("", response_model=list[PluginInfoResponse], summary="List plugins")
-async def list_plugins(principal: AdminPrincipal, state: State) -> list[PluginInfoResponse]:
-    """Return every plugin kind's discovery and configuration state."""
+async def list_plugins(principal: CurrentPrincipal, state: State) -> list[PluginInfoResponse]:
+    """Return every plugin kind's discovery and configuration state.
+
+    Open to any signed-in user, the same as provider listing: the client needs to
+    know whether images/voice are enabled to show or hide their controls, even
+    though only an administrator can change the configuration.
+    """
     del principal
     results: list[PluginInfoResponse] = []
     async with state.db.session() as session:

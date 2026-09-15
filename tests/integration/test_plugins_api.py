@@ -57,7 +57,9 @@ def test_validate_reports_not_ok_when_disabled(client: TestClient, registered: d
     assert response.json()["ok"] is False
 
 
-def test_plugins_routes_require_admin(client: TestClient, registered: dict) -> None:
+def test_list_is_open_but_configuration_requires_admin(
+    client: TestClient, registered: dict
+) -> None:
     created = client.post(
         "/api/admin/users",
         headers=_headers(registered),
@@ -77,5 +79,8 @@ def test_plugins_routes_require_admin(client: TestClient, registered: dict) -> N
     assert login.status_code == 200, login.text
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-    response = client.get("/api/plugins", headers=headers)
+    listed = client.get("/api/plugins", headers=headers)
+    assert listed.status_code == 200
+
+    response = client.put("/api/plugins/images", headers=headers, json={"enabled": True})
     assert response.status_code == 403

@@ -26,6 +26,7 @@ import type {
   DiscoveredBackend,
   FallbackEntry,
   Folder,
+  GeneratedImage,
   InstalledModel,
   JobSnapshot,
   McpApproval,
@@ -36,6 +37,8 @@ import type {
   ModelDetails,
   ModelParams,
   ParamValue,
+  PluginInfo,
+  PluginKind,
   Preset,
   ProbeResult,
   ProviderGroup,
@@ -603,6 +606,61 @@ export class ApiClient {
 
   approveToolCall(callId: string, approved: boolean, remember = false): Promise<{ ok: boolean }> {
     return this.#json("POST", "/api/tools/approve", { call_id: callId, approved, remember });
+  }
+
+  // --- plugins: images and voice (phase 10) ---------------------------------------
+
+  plugins(): Promise<PluginInfo[]> {
+    return this.request<PluginInfo[]>("/api/plugins");
+  }
+
+  updatePlugin(
+    name: PluginKind,
+    patch: {
+      enabled: boolean;
+      base_url?: string | null;
+      model?: string | null;
+      tts_voice?: string | null;
+      api_key?: string;
+    },
+  ): Promise<PluginInfo> {
+    return this.#json("PUT", `/api/plugins/${name}`, patch);
+  }
+
+  validatePlugin(name: PluginKind): Promise<{ ok: boolean; detail: string }> {
+    return this.#json("POST", `/api/plugins/${name}/validate`);
+  }
+
+  generateImages(
+    prompt: string,
+    options: { size?: string; n?: number } = {},
+  ): Promise<{ images: GeneratedImage[] }> {
+    return this.#json("POST", "/api/images/generate", { prompt, ...options });
+  }
+
+  async transcribeAudio(audio: Blob, language?: string): Promise<{ text: string }> {
+    const form = new FormData();
+    form.append("audio", audio, "clip.webm");
+    const path = language
+      ? `/api/audio/transcribe?language=${encodeURIComponent(language)}`
+      : "/api/audio/transcribe";
+    return this.request<{ text: string }>(path, { method: "POST", body: form });
+  }
+
+  /** Synthesize speech for a piece of text, returning playable audio. */
+  async speak(text: string, voice?: string): Promise<Blob> {
+    let response = await this.#send("/api/audio/speech", {
+      method: "POST",
+      body: JSON.stringify({ text, voice }),
+    });
+    if (response.status === 401 && this.#session && (await this.#tryRefresh())) {
+      response = await this.#send("/api/audio/speech", {
+        method: "POST",
+        body: JSON.stringify({ text, voice }),
+      });
+    }
+    if (!response.ok) throw new VeloxApiError(response.status, await readError(response));
+    return response.blob();
   }
 }
 

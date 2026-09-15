@@ -29,6 +29,7 @@
     | "custom-models"
     | "knowledge"
     | "mcp"
+    | "plugins"
     | "admin";
 
   let view = $state<View>("chat");
@@ -48,6 +49,8 @@
       view = "knowledge";
     } else if (hash.startsWith("#/mcp")) {
       view = "mcp";
+    } else if (hash.startsWith("#/plugins")) {
+      view = app.isAdmin ? "plugins" : "chat";
     } else if (hash.startsWith("#/admin")) {
       view = app.isAdmin ? "admin" : "chat";
     } else {
@@ -128,6 +131,10 @@
       {:else if view === "mcp"}
         {#await import("$lib/components/McpServersPanel.svelte") then { default: McpServersPanel }}
           <McpServersPanel />
+        {/await}
+      {:else if view === "plugins"}
+        {#await import("$lib/components/PluginsPanel.svelte") then { default: PluginsPanel }}
+          <PluginsPanel />
         {/await}
       {:else if view === "admin"}
         {#await import("$lib/components/AdminPanel.svelte") then { default: AdminPanel }}

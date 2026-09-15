@@ -17,6 +17,7 @@ import type {
   ClientConfig,
   Folder,
   ModelEntry,
+  PluginInfo,
   ProviderGroup,
   Session,
   Tag,
@@ -68,6 +69,7 @@ class AppStore {
 
   folders = $state<Folder[]>([]);
   tags = $state<Tag[]>([]);
+  plugins = $state<PluginInfo[]>([]);
 
   error = $state<ApiError | null>(null);
   booted = $state(false);
@@ -96,6 +98,14 @@ class AppStore {
 
   get authenticated(): boolean {
     return this.session !== null || this.config?.auth.enabled === false;
+  }
+
+  get imagesEnabled(): boolean {
+    return this.plugins.some((p) => p.kind === "images" && p.enabled);
+  }
+
+  get voiceEnabled(): boolean {
+    return this.plugins.some((p) => p.kind === "voice" && p.enabled);
   }
 
   /** Translate with the active locale. */
@@ -143,7 +153,16 @@ class AppStore {
       this.loadChats(true),
       this.loadFolders(),
       this.loadTags(),
+      this.loadPlugins(),
     ]);
+  }
+
+  async loadPlugins(): Promise<void> {
+    try {
+      this.plugins = await api.plugins();
+    } catch (error) {
+      this.report(error);
+    }
   }
 
   async loadFolders(): Promise<void> {
