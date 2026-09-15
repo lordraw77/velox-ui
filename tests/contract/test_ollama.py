@@ -235,3 +235,95 @@ async def test_thinking_models_emit_reasoning_separately(ollama_server, http_cli
     assert reasoning == "Okay, the user wants a greeting."
     assert text == "Hello, world! This is velox-ui."
     assert reasoning not in text, "thinking must not leak into the visible answer"
+
+
+async def test_tools_are_sent_in_the_request_body(ollama_server, http_client) -> None:
+    """A turn offering tools must actually put them on the wire.
+
+    Regression: the adapter reported ``ToolSupport.NATIVE`` from ``/api/show`` but
+    never sent ``tools``, so a model with tool support was silently never offered
+    any — it answered "I cannot browse the web" while the harness believed it had
+    been given a browse tool.
+    """
+    from velox_ui.providers.base import ToolSpec
+
+    provider = _provider(ollama_server, http_client)
+    body = provider._encode_request(
+        ChatRequest(
+            model="llama3.2",
+            messages=(ChatMessage(role="user", content="x"),),
+            tools=(
+                ToolSpec(
+                    name="web_search",
+                    description="Search the web.",
+                    parameters={"type": "object", "properties": {"query": {"type": "string"}}},
+                ),
+            ),
+        )
+    )
+
+    assert body["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web.",
+                "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+            },
+        }
+    ]
+
+
+async def test_a_tool_call_is_streamed_and_finishes_as_tool_calls(
+    ollama_server, http_client
+) -> None:
+    """Ollama sends a whole call in one chunk, with object arguments and no id."""
+    from velox_ui.providers.base import ToolCallDelta
+
+    provider = _provider(ollama_server, http_client)
+    events = [event async for event in provider.stream_chat(_request("tools"))]
+
+    calls = [event for event in events if isinstance(event, ToolCallDelta)]
+    assert len(calls) == 1
+    assert calls[0].name == "get_weather"
+    assert calls[0].arguments_fragment == '{"city":"Turin"}'
+    assert calls[0].id, "an id is minted, since Ollama sends none"
+
+    done = next(event for event in events if isinstance(event, Done))
+    assert done.finish_reason == "tool_calls", (
+        "Ollama reports done_reason 'stop' even for a tool-only turn; the adapter "
+        "must correct it or the service layer never dispatches the call"
+    )
+
+
+async def test_tool_results_are_encoded_the_way_ollama_expects(
+    ollama_server, http_client
+) -> None:
+    """Assistant tool calls take object arguments; a result is tied back by name."""
+    from velox_ui.providers.base import ToolCall
+
+    provider = _provider(ollama_server, http_client)
+    body = provider._encode_request(
+        ChatRequest(
+            model="llama3.2",
+            messages=(
+                ChatMessage(role="user", content="weather?"),
+                ChatMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(
+                        ToolCall(id="c1", name="get_weather", arguments='{"city": "Turin"}'),
+                    ),
+                ),
+                ChatMessage(role="tool", content="18C", tool_call_id="c1", name="get_weather"),
+            ),
+        )
+    )
+
+    assistant = body["messages"][1]
+    assert assistant["tool_calls"] == [
+        {"function": {"name": "get_weather", "arguments": {"city": "Turin"}}}
+    ]
+    result = body["messages"][2]
+    assert result["role"] == "tool"
+    assert result["tool_name"] == "get_weather"

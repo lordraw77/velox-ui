@@ -149,6 +149,45 @@ async def _chat(request: Request) -> StreamingResponse | JSONResponse:
     delay = 1.0 if model == "slow" else 0.0
 
     async def stream() -> AsyncIterator[bytes]:
+        # Ollama's own tool-call shape: the whole call in one chunk, arguments as a
+        # JSON object rather than a string, no call id, and `done_reason: "stop"`
+        # even though the turn only asked for a tool.
+        if model == "tools" and not any(
+            message.get("role") == "tool" for message in body.get("messages", [])
+        ):
+            yield _line(
+                {
+                    "model": model,
+                    "created_at": "2026-09-12T10:00:00.000000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": {"city": "Turin"},
+                                }
+                            }
+                        ],
+                    },
+                    "done": False,
+                }
+            )
+            yield _line(
+                {
+                    "model": model,
+                    "created_at": "2026-09-12T10:00:00.000000Z",
+                    "message": {"role": "assistant", "content": ""},
+                    "done": True,
+                    "done_reason": "stop",
+                    "prompt_eval_count": 20,
+                    "eval_count": 5,
+                    "eval_duration": 500_000_000,
+                    "prompt_eval_duration": 100_000_000,
+                }
+            )
+            return
         if model == "thinking":
             for token in THINKING_TOKENS:
                 yield _line(

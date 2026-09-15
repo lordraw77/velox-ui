@@ -578,7 +578,6 @@ class ChatService:
                 tool_index[spec.name] = server_tool
         if web_tools:
             tool_plugin = await self._state.plugins.get("tools")
-            _log.info("web_tools requested: plugin_found=%s", tool_plugin is not None)
             if tool_plugin is not None:
                 for tool in tool_plugin.tools():
                     spec = ToolSpec(
@@ -588,12 +587,6 @@ class ChatService:
                     tool_index[spec.name] = _BuiltinTool(name=tool.name)
         if specs:
             native_tools = capabilities is not None and capabilities.tools == ToolSupport.NATIVE
-            _log.info(
-                "tools offered: count=%d native=%s capabilities_tools=%s",
-                len(specs),
-                native_tools,
-                capabilities.tools if capabilities else None,
-            )
             if native_tools:
                 request_tools = tuple(specs)
             else:

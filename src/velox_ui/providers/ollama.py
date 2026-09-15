@@ -29,6 +29,7 @@ from typing import Any, cast
 import httpx
 import msgspec
 
+from velox_ui.ids import new_ulid
 from velox_ui.providers.base import (
     Capabilities,
     ChatRequest,
@@ -46,6 +47,7 @@ from velox_ui.providers.base import (
     StreamEvent,
     TextDelta,
     Timeouts,
+    ToolCallDelta,
     ToolSupport,
     Usage,
 )
@@ -59,6 +61,7 @@ from velox_ui.providers.errors import (
     UpstreamError,
 )
 from velox_ui.providers.modelfile import coerce_parameter
+from velox_ui.providers.tools.translate import to_openai_tools
 
 __all__ = ["OllamaProvider"]
 
@@ -223,6 +226,7 @@ class OllamaProvider:
         )
 
         started_generating = False
+        saw_tool_calls = False
         try:
             async with self._client.stream("POST", url, json=body, timeout=timeout) as response:
                 if response.status_code >= 400:
@@ -252,8 +256,30 @@ class OllamaProvider:
                     if text := message.get("content"):
                         yield TextDelta(text)
 
+                    # Ollama sends each tool call complete in one chunk rather than in
+                    # fragments, and gives it no id — one is minted here so the
+                    # service layer can key its call buffers the same way it does for
+                    # an OpenAI-style stream.
+                    for call in message.get("tool_calls") or []:
+                        function = call.get("function") or {}
+                        name = function.get("name")
+                        if not name:
+                            continue
+                        saw_tool_calls = True
+                        yield ToolCallDelta(
+                            id=call.get("id") or new_ulid(),
+                            name=str(name),
+                            arguments_fragment=_encode_arguments(function.get("arguments")),
+                        )
+
                     if chunk.get("done"):
                         yield self._usage_from(chunk)
+                        if saw_tool_calls:
+                            # Ollama reports `done_reason: "stop"` even for a turn that
+                            # only asked for a tool; the service layer keys off the
+                            # finish reason, so it is corrected here.
+                            yield Done("tool_calls")
+                            return
                         yield Done("stop" if chunk.get("done_reason") != "length" else "length")
                         return
         except httpx.ConnectError as exc:
@@ -499,6 +525,21 @@ class OllamaProvider:
                 entry["content"] = "\n".join(part for part in text_parts if part)
                 if images:
                     entry["images"] = images
+            # Ollama's tool shape differs from OpenAI's in two ways: arguments are a
+            # JSON *object*, not a string, and a call carries no id — a tool result is
+            # tied back by `tool_name` instead of `tool_call_id`.
+            if message.tool_calls:
+                entry["tool_calls"] = [
+                    {
+                        "function": {
+                            "name": call.name,
+                            "arguments": _decode_arguments(call.arguments),
+                        }
+                    }
+                    for call in message.tool_calls
+                ]
+            if message.role == "tool" and message.name:
+                entry["tool_name"] = message.name
             messages.append(entry)
 
         options = _params_to_options(request)
@@ -517,6 +558,11 @@ class OllamaProvider:
             body["think"] = request.params.think
         if request.json_schema is not None:
             body["format"] = request.json_schema
+        # Ollama takes the OpenAI tool shape verbatim here (unlike its response side,
+        # handled above). A model whose template has no tool support ignores the field.
+        tools = to_openai_tools(request.tools)
+        if tools is not None:
+            body["tools"] = tools
         return body
 
     def _usage_from(self, chunk: dict[str, Any]) -> Usage:
@@ -654,6 +700,31 @@ def _epoch_ms(value: object) -> int | None:
     except ValueError:
         return None
     return int(moment.timestamp() * 1_000)
+
+
+def _decode_arguments(arguments: str) -> dict[str, Any]:
+    """Parse a tool call's JSON-string arguments into the object Ollama expects.
+
+    Malformed arguments become an empty object rather than raising: the model, not
+    this adapter, produced them, and failing the whole turn over it would be worse
+    than letting the tool report the mismatch.
+    """
+    if not arguments:
+        return {}
+    try:
+        decoded = msgspec.json.decode(arguments)
+    except msgspec.DecodeError:
+        return {}
+    return cast(dict[str, Any], decoded) if isinstance(decoded, dict) else {}
+
+
+def _encode_arguments(arguments: Any) -> str:
+    """Render Ollama's object-shaped tool arguments as the JSON string callers expect."""
+    if isinstance(arguments, str):
+        return arguments
+    if arguments is None:
+        return "{}"
+    return msgspec.json.encode(arguments).decode("utf-8")
 
 
 def _params_to_options(request: ChatRequest) -> dict[str, Any]:
