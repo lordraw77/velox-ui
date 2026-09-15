@@ -108,6 +108,17 @@ class AppStore {
     return this.plugins.some((p) => p.kind === "voice" && p.enabled);
   }
 
+  /**
+   * Whether the builtin web-search/browsing tool is enabled instance-wide.
+   *
+   * Unlike `tool_server_ids` (MCP servers, opt in per custom model), this offers
+   * web_search/web_browse to every chat once the plugin is configured — the same
+   * "one global toggle" shape images/voice already use, not an opt-in per model.
+   */
+  get toolsEnabled(): boolean {
+    return this.plugins.some((p) => p.kind === "tools" && p.enabled);
+  }
+
   /** Translate with the active locale. */
   t = (key: string, values?: Record<string, string | number>): string =>
     translate(this.locale, key, values);

@@ -257,7 +257,7 @@ class ConversationStore {
           params: startingModel?.params ?? undefined,
           knowledge_ids: startingModel?.knowledgeIds ?? undefined,
           tool_server_ids: startingModel?.toolServerIds ?? undefined,
-          web_tools: startingModel?.webToolsEnabled ?? undefined,
+          web_tools: app.toolsEnabled || (startingModel?.webToolsEnabled ?? false),
         },
         this.#controller.signal,
       );
