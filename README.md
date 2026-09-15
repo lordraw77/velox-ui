@@ -7,23 +7,25 @@ with Open WebUI, built for latency and a small footprint.
 loading a model is reported as its own state rather than as a timeout, and a host that
 is switched off degrades to an offline badge instead of an error.
 
-> **Status: phase 9 of 10.** There is a working product: configuration, database,
-> authentication, the conversation tree, the provider abstraction with local (Ollama,
-> llama.cpp) and cloud (Groq, OpenRouter, Mistral, NVIDIA, Cloudflare, Gemini,
-> Anthropic, OpenAI) adapters, local model management, a web interface with streaming,
-> virtual scrolling, markdown and per-reply speed metrics, organization (folders, tags,
-> pin/archive), full-text search, custom model presets, an admin user console, RAG
-> (knowledge-base collections, document upload and ingestion, sqlite-vec/pgvector
-> retrieval, citations streamed into chats whose custom model carries
-> `knowledge_ids`), MCP and tool calling (stdio and Streamable HTTP MCP servers, an
-> approval gate for tool calls, native tool calling on the OpenAI-compatible and
-> Anthropic adapters, prompt-based emulation for models without native support, and a
-> bounded tool-call loop streamed into chats whose custom model carries `tools`), and
-> now Open WebUI import: `velox import openwebui` reconstructs the branching message
-> tree, tags and folders from Open WebUI's own chat export, idempotent by source chat
-> id ([docs/migration-openwebui.md](docs/migration-openwebui.md)). Verified in a real
-> browser against a real Ollama host. Still to come: optional plugins and packaging
-> (10). The plan is in [docs/design/00-overview.md](docs/design/00-overview.md);
+> **Status: phase 10 of 10 — feature-complete.** There is a working product:
+> configuration, database, authentication, the conversation tree, the provider
+> abstraction with local (Ollama, llama.cpp) and cloud (Groq, OpenRouter, Mistral,
+> NVIDIA, Cloudflare, Gemini, Anthropic, OpenAI) adapters, local model management, a
+> web interface with streaming, virtual scrolling, markdown and per-reply speed
+> metrics, organization (folders, tags, pin/archive), full-text search, custom model
+> presets, an admin user console, RAG (knowledge-base collections, document upload and
+> ingestion, sqlite-vec/pgvector retrieval, citations streamed into chats whose custom
+> model carries `knowledge_ids`), MCP and tool calling (stdio and Streamable HTTP MCP
+> servers, an approval gate for tool calls, native tool calling on the
+> OpenAI-compatible and Anthropic adapters, prompt-based emulation for models without
+> native support, and a bounded tool-call loop streamed into chats whose custom model
+> carries `tools`), Open WebUI import (`velox import openwebui`, reconstructing the
+> branching message tree, tags and folders from Open WebUI's own chat export, see
+> [docs/migration-openwebui.md](docs/migration-openwebui.md)), and now optional
+> plugins: image generation and voice (transcription/speech), each a thin
+> OpenAI-compatible HTTP client disabled by default and never imported when off
+> (ADR-0014, ADR-0021). Verified in a real browser against a real Ollama host. The
+> design record is in [docs/design/00-overview.md](docs/design/00-overview.md);
 > nothing below is claimed to work unless it is marked as shipped.
 
 ## Quickstart
@@ -63,6 +65,7 @@ fork, with an architecture built around that last number.
 Measured on a 4-core x86-64 Linux host with `python -m bench`, against deterministic
 local fixtures — no GPU, no network, no API key. Reproduce them yourself; the suite
 runs in CI on every change and a regression fails the build (ADR-0015).
+[docs/benchmarks.md](docs/benchmarks.md) has the full table and how to read it.
 
 Two of those numbers need their caveat stated rather than buried. The
 time-to-first-token figure is a *difference*: the same request is timed straight to the
@@ -122,6 +125,7 @@ Messages API does not fit that shape and gets its own adapter
 The contract, the capability model and the error taxonomy are specified in
 [docs/design/04-provider-interface.md](docs/design/04-provider-interface.md), and
 [docs/adding-a-provider.md](docs/adding-a-provider.md) walks through adding one.
+[docs/providers.md](docs/providers.md) has the full backend-by-backend table.
 
 What the two shipped adapters do beyond streaming text: real context windows and
 capabilities read from `/api/show` and `/props` rather than guessed from model names;
@@ -163,7 +167,10 @@ in `velox.toml` or as an environment variable — `VELOX_PORT`, `VELOX_DB_URL`,
 `VELOX_AUTH_ENABLED` — with the environment always winning. See
 [velox.example.toml](velox.example.toml) for the annotated reference, and run
 `velox config check` to validate what an instance would actually use (credentials are
-masked, so the output is safe to paste into a bug report).
+masked, so the output is safe to paste into a bug report). The full reference, section
+by section, is [docs/configuration.md](docs/configuration.md);
+[docs/deployment.md](docs/deployment.md) covers Docker, PostgreSQL, a reverse proxy and
+backups.
 
 ## Commands
 
@@ -194,6 +201,10 @@ npm --prefix frontend run size     # enforces the bundle budget
 
 Running without building the interface is fine: the server says so at `/` and serves
 its API normally.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the fuller version of this, including how to
+add a provider or a plugin, and [CHANGELOG.md](CHANGELOG.md) for what shipped in each
+phase.
 
 No test requires an API key, a network or a real inference backend, and none ever will:
 provider adapters are verified against fake servers that replay each backend's real

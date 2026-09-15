@@ -12,7 +12,11 @@ primary use case, not a fallback.
 | [02-db-schema.md](02-db-schema.md) | Tables, indexes, pagination and FTS strategy |
 | [03-http-api.md](03-http-api.md) | Endpoints, the streaming event protocol, error envelope |
 | [04-provider-interface.md](04-provider-interface.md) | Provider contract, structs, errors, presets |
-| [../adr/](../adr/) | Architecture decision records 0001-0016 |
+| [../providers.md](../providers.md) | Provider and plugin capability matrix |
+| [../benchmarks.md](../benchmarks.md) | Benchmark methodology and current results |
+| [../configuration.md](../configuration.md) | Full `velox.toml`/environment reference |
+| [../deployment.md](../deployment.md) | Docker, PostgreSQL, reverse proxy, backups |
+| [../adr/](../adr/) | Architecture decision records 0001-0021 |
 
 > Framework and stack decisions were confirmed at review: FastAPI + msgspec, Granian,
 > Svelte 5, Apache-2.0, SQLite/WAL default with optional PostgreSQL.
@@ -86,7 +90,14 @@ Each phase ends working, tested and benchmarked before the next begins.
    chat export (not its database file), reconstructing the branching message tree,
    tags and, given a folder export, folder names; idempotent by the source chat id, so
    re-running an import is a no-op ([docs/migration-openwebui.md](../migration-openwebui.md)).
-10. Optional plugins (images, voice), packaging, documentation.
+10. ~~Optional plugins (images, voice), packaging, documentation.~~ **Done** — image
+    generation and voice (STT/TTS) ship as builtin entry-point plugins over
+    OpenAI-compatible HTTP endpoints (ADR-0014, ADR-0021), disabled and unimported by
+    default, configured through `/api/plugins` and a settings page. `CHANGELOG.md`,
+    `CONTRIBUTING.md` and the remaining reference docs
+    ([docs/providers.md](../providers.md), [docs/benchmarks.md](../benchmarks.md),
+    [docs/configuration.md](../configuration.md), [docs/deployment.md](../deployment.md))
+    are filled in.
 
 ## Decisions taken at review
 

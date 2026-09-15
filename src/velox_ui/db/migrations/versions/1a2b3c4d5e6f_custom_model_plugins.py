@@ -23,9 +23,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Apply the migration."""
     with op.batch_alter_table("custom_model", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column("plugins", velox_ui.db.types.PackedJson(), nullable=True)
-        )
+        batch_op.add_column(sa.Column("plugins", velox_ui.db.types.PackedJson(), nullable=True))
 
 
 def downgrade() -> None:

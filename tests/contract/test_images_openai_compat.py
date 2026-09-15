@@ -54,7 +54,8 @@ async def test_validate_reports_ok_when_reachable(media_server: FakeServer) -> N
 
 async def test_validate_reports_not_ok_without_base_url() -> None:
     plugin = OpenAICompatImagePlugin(
-        PluginConfig(enabled=True, base_url=None), secrets=object()  # type: ignore[arg-type]
+        PluginConfig(enabled=True, base_url=None),
+        secrets=object(),  # type: ignore[arg-type]
     )
     result = await plugin.validate()
     assert result.ok is False

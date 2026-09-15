@@ -102,3 +102,9 @@ autodiscover = true
 # [[providers.endpoints]]
 # preset = "anthropic"
 # api_key = ""                              # required; empty: the preset's default address
+
+# Image generation and voice (STT/TTS) plugins (ADR-0014, ADR-0021) are not configured
+# here: both are disabled singletons managed at runtime, through the interface's
+# Plugins page or directly via PUT /api/plugins/{images,voice}. Each points at an
+# OpenAI-compatible host (cloud or self-hosted) for /v1/images/generations,
+# /v1/audio/transcriptions and /v1/audio/speech; neither ships a local model.
