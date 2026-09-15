@@ -2,8 +2,9 @@
 
 A plugin is discovered by entry-point metadata alone and imported only at first use,
 and only if enabled — the same "ask what it can do, not what it is" discipline the
-provider registry applies (``providers/registry.py``). ``images`` and ``voice`` are
-the two groups phase 10 introduces; more groups can be added the same way later.
+provider registry applies (``providers/registry.py``). ``images`` and ``voice`` were
+phase 10's two groups; ``tools`` is the one ADR-0014 named from the start for a
+builtin (non-MCP) tool a model can call, dormant until the first one needed it.
 """
 
 from __future__ import annotations
@@ -23,10 +24,12 @@ __all__ = [
     "PluginInfo",
     "PluginKind",
     "PluginValidation",
+    "ToolDefinition",
+    "ToolPlugin",
     "VoicePlugin",
 ]
 
-type PluginKind = Literal["images", "voice"]
+type PluginKind = Literal["images", "voice", "tools"]
 
 
 class PluginConfig(msgspec.Struct, frozen=True):
@@ -118,6 +121,37 @@ class VoicePlugin(Plugin, Protocol):
 
     async def speak(self, *, text: str, voice: str | None = None) -> AudioResult:
         """Synthesize speech for a piece of text."""
+        ...
+
+
+class ToolDefinition(msgspec.Struct, frozen=True):
+    """One tool a :class:`ToolPlugin` offers, in the shape a model call needs.
+
+    ``parameters`` is a JSON Schema object, the same shape
+    ``providers.base.ToolSpec.parameters`` expects — a tool plugin's definitions
+    are turned into ``ToolSpec`` directly by ``services/chat.py`` and flow through
+    the same provider-agnostic translation MCP tools already use.
+    """
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+@runtime_checkable
+class ToolPlugin(Plugin, Protocol):
+    """A plugin offering one or more tools a model can call mid-turn.
+
+    Unlike ``ImagePlugin``/``VoicePlugin`` (one fixed capability each),
+    ``tools()`` lets one plugin describe several distinct callable tools.
+    """
+
+    def tools(self) -> list[ToolDefinition]:
+        """Describe every tool this plugin currently offers. No I/O."""
+        ...
+
+    async def call(self, name: str, arguments: dict[str, Any]) -> str:
+        """Run one of this plugin's tools and return its result as text."""
         ...
 
 

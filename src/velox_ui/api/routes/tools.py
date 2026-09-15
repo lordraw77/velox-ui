@@ -1,11 +1,10 @@
 """The caller's available tools, and resolving a pending approval.
 
-``GET /api/tools`` is MCP-only for phase 8: no builtin tool (calculator, code
-execution, HTTP fetch) is implemented (ADR-0014's plugin entry-point mechanism is the
-documented path for adding one later), so the catalogue this endpoint returns is
-exactly the union of the caller's enabled MCP servers' cached tools, qualified by
-server name the same way :mod:`velox_ui.mcp.schema_translate` qualifies them for a
-provider request.
+``GET /api/tools`` unions two sources: the caller's enabled MCP servers' cached tools
+(qualified by server name the same way :mod:`velox_ui.mcp.schema_translate` qualifies
+them for a provider request), and, since phase "web tools", the enabled builtin
+``"tools"`` plugin's own tools (ADR-0014) — reported under a synthetic
+``server_id="builtin"`` since they have no owning MCP server.
 """
 
 from __future__ import annotations
@@ -50,10 +49,10 @@ class ApproveToolCallResponse(BaseModel):
 
 @router.get("", response_model=list[ToolResponse], summary="List available tools")
 async def list_tools(principal: CurrentPrincipal, state: State) -> list[ToolResponse]:
-    """Return every tool the caller's enabled MCP servers currently offer, cached."""
+    """Return every tool the caller's enabled MCP servers and builtin plugin offer."""
     async with state.db.session() as session:
         servers = await McpServerRepository(session).list_visible(user_id=principal.user_id)
-        return [
+        tools = [
             ToolResponse(
                 name=tool["name"],
                 description=tool.get("description", ""),
@@ -65,6 +64,20 @@ async def list_tools(principal: CurrentPrincipal, state: State) -> list[ToolResp
             if server.enabled
             for tool in (server.tool_cache or [])
         ]
+
+    tool_plugin = await state.plugins.get("tools")
+    if tool_plugin is not None:
+        tools.extend(
+            ToolResponse(
+                name=tool.name,
+                description=tool.description,
+                input_schema=tool.parameters,
+                server_id="builtin",
+                server_name="Web tools",
+            )
+            for tool in tool_plugin.tools()
+        )
+    return tools
 
 
 @router.post(

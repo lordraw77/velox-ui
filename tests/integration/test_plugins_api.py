@@ -13,7 +13,7 @@ def test_list_plugins_starts_disabled(client: TestClient, registered: dict) -> N
     listed = client.get("/api/plugins", headers=_headers(registered))
     assert listed.status_code == 200
     by_kind = {p["kind"]: p for p in listed.json()}
-    assert set(by_kind) == {"images", "voice"}
+    assert set(by_kind) == {"images", "voice", "tools"}
     assert all(not p["enabled"] for p in by_kind.values())
     assert all(not p["configured"] for p in by_kind.values())
 

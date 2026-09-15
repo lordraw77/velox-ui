@@ -15,17 +15,21 @@ from dataclasses import dataclass
 from importlib import metadata
 from typing import TYPE_CHECKING, Literal, overload
 
+from velox_ui.plugins.errors import PluginDisabledError
 from velox_ui.plugins.spec import (
     ImagePlugin,
     Plugin,
     PluginConfig,
     PluginInfo,
     PluginKind,
+    ToolPlugin,
     VoicePlugin,
     config_from_dict,
 )
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from velox_ui.security.crypto import SecretBox
     from velox_ui.state import AppState
 
@@ -98,6 +102,7 @@ class PluginRegistry:
         description = {
             "images": "Image generation over an OpenAI-compatible endpoint.",
             "voice": "Speech transcription and synthesis over an OpenAI-compatible endpoint.",
+            "tools": "Builtin tools a model can call mid-turn (web search and browsing).",
         }[kind]
         return PluginInfo(
             name=name,
@@ -111,6 +116,8 @@ class PluginRegistry:
     async def get(self, kind: Literal["images"]) -> ImagePlugin | None: ...
     @overload
     async def get(self, kind: Literal["voice"]) -> VoicePlugin | None: ...
+    @overload
+    async def get(self, kind: Literal["tools"]) -> ToolPlugin | None: ...
 
     async def get(self, kind: PluginKind) -> Plugin | None:
         """Return the loaded plugin for a kind, or ``None`` if disabled/unconfigured.
@@ -154,3 +161,14 @@ class PluginRegistry:
         plugin = load(entry_points[0], config, secrets=self._state.secrets)
         self._instances[kind] = plugin
         return plugin
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        """Run a builtin tool by name, on the enabled ``"tools"`` plugin.
+
+        Raises:
+            PluginDisabledError: If no ``"tools"`` plugin is enabled and configured.
+        """
+        plugin = await self.get("tools")
+        if plugin is None:
+            raise PluginDisabledError("No tools plugin is enabled.")
+        return await plugin.call(name, arguments)

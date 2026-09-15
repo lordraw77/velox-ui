@@ -44,6 +44,7 @@ from velox_ui.ids import new_ulid
 from velox_ui.mcp.client import McpError
 from velox_ui.mcp.schema_translate import render_tool_result, split_qualified_name, to_tool_spec
 from velox_ui.metrics import METRICS
+from velox_ui.plugins.errors import PluginDisabledError, PluginUpstreamError
 from velox_ui.providers.base import (
     Capabilities,
     ChatMessage,
@@ -102,6 +103,18 @@ what it has, same as a model given no tools that ran out of context.
 _APPROVAL_TIMEOUT_S = 300.0
 
 
+class _BuiltinTool(msgspec.Struct, frozen=True):
+    """A builtin (plugin-backed, non-MCP) tool offered for one turn.
+
+    Distinguished from :class:`~velox_ui.mcp.manager.ServerTool` in ``tool_index``
+    by ``isinstance`` in :meth:`PreparedTurn._run_tool_call`: a builtin tool has no
+    owning server, no approval gate, and dispatches through
+    ``AppState.plugins.call_tool`` instead of ``AppState.mcp.call_tool``.
+    """
+
+    name: str
+
+
 class PreparedTurn:
     """A validated turn, ready to stream.
 
@@ -123,7 +136,7 @@ class PreparedTurn:
         content: str,
         request: ChatRequest,
         citations: Sequence[RetrievedChunk] = (),
-        tool_index: dict[str, ServerTool] | None = None,
+        tool_index: dict[str, ServerTool | _BuiltinTool] | None = None,
         native_tools: bool = False,
     ) -> None:
         """Store everything the stream needs; perform no I/O.
@@ -140,11 +153,13 @@ class PreparedTurn:
             content: The user's message text.
             request: The provider request built by :meth:`ChatService.prepare`.
             citations: RAG hits to announce before generation starts.
-            tool_index: Every offered tool, keyed by its provider-facing qualified
-                name (``"<server>__<tool>"``), so a tool call the model emits can be
-                traced back to which MCP server to execute it against. Empty when the
-                turn offers no tools — the common case, and the one this costs nothing
-                beyond an empty-dict membership check for.
+            tool_index: Every offered tool, keyed by its provider-facing name — an
+                MCP tool's qualified ``"<server>__<tool>"`` name, or a builtin
+                plugin tool's flat name (``"web_search"``, never qualified, so the
+                two never collide) — so a tool call the model emits can be traced
+                back to how to execute it. Empty when the turn offers no tools —
+                the common case, and the one this costs nothing beyond an
+                empty-dict membership check for.
             native_tools: Whether tools were attached to ``request.tools`` for the
                 provider's own tool-calling support. When ``False`` but ``tool_index``
                 is non-empty, tools were instead described in the prompt
@@ -361,7 +376,7 @@ class PreparedTurn:
         round sees it, and records a trace entry consumed by :meth:`stream` for the
         persisted message's ``meta.tool_trace``.
         """
-        server_tool = self._tool_index.get(call.name)
+        tool_entry = self._tool_index.get(call.name)
         try:
             arguments = json.loads(call.arguments) if call.arguments else {}
             if not isinstance(arguments, dict):
@@ -369,13 +384,28 @@ class PreparedTurn:
         except json.JSONDecodeError:
             arguments = {}
 
-        if server_tool is None:
+        if isinstance(tool_entry, _BuiltinTool):
+            # No approval gate (a scope decision, not an oversight): a builtin
+            # plugin tool runs immediately, unlike an MCP server's, which can be
+            # configured to require one.
+            yield encode_event(
+                "tool_call",
+                {"id": call.id, "name": call.name, "args": arguments, "approval": "auto"},
+            )
+            try:
+                content = await self._state.plugins.call_tool(tool_entry.name, arguments)
+                ok = True
+            except (PluginDisabledError, PluginUpstreamError) as exc:
+                ok = False
+                content = f"Tool call failed: {exc.message}"
+        elif tool_entry is None:
             ok = False
             content = f"Unknown tool '{call.name}'."
             yield encode_event(
                 "tool_call", {"id": call.id, "name": call.name, "args": arguments}
             )
         else:
+            server_tool = tool_entry
             split = split_qualified_name(call.name)
             raw_name = split[1] if split is not None else call.name
             decision = self._state.mcp.gate(
@@ -470,6 +500,7 @@ class ChatService:
         system_prompt: str | None = None,
         knowledge_ids: Sequence[str] = (),
         tool_server_ids: Sequence[str] = (),
+        web_tools: bool = False,
     ) -> PreparedTurn:
         """Validate a turn and gather everything needed to run it.
 
@@ -492,6 +523,11 @@ class ChatService:
                 the client from the chat's custom model, same pattern as
                 ``knowledge_ids``). Empty is the default and costs one dictionary
                 check on the completion path, same reasoning as ``knowledge_ids``.
+            web_tools: Whether to offer the enabled builtin ``"tools"`` plugin's
+                tools (web search and browsing, ADR-0014), resolved by the client
+                from the chat's custom model the same way. ``False`` is the
+                default; when set, one plugin-registry lookup decides whether a
+                ``"tools"`` plugin is configured at all.
 
         Returns:
             A :class:`PreparedTurn`.
@@ -528,28 +564,33 @@ class ChatService:
                     0, ChatMessage(role="system", content=_context_block(citations))
                 )
 
-        tool_index: dict[str, ServerTool] = {}
+        tool_index: dict[str, ServerTool | _BuiltinTool] = {}
         request_tools: tuple[ToolSpec, ...] | None = None
         native_tools = False
+        specs: list[ToolSpec] = []
         if tool_server_ids:
             server_tools = await self._state.mcp.tools_for_servers(
                 tool_server_ids, user_id=user_id
             )
-            specs: list[ToolSpec] = []
             for server_tool in server_tools:
                 spec = to_tool_spec(server_tool.tool, server_name=server_tool.server_name)
                 specs.append(spec)
                 tool_index[spec.name] = server_tool
-            if specs:
-                native_tools = (
-                    capabilities is not None and capabilities.tools == ToolSupport.NATIVE
-                )
-                if native_tools:
-                    request_tools = tuple(specs)
-                else:
-                    messages.append(
-                        ChatMessage(role="system", content=build_tool_prompt(specs))
+        if web_tools:
+            tool_plugin = await self._state.plugins.get("tools")
+            if tool_plugin is not None:
+                for tool in tool_plugin.tools():
+                    spec = ToolSpec(
+                        name=tool.name, description=tool.description, parameters=tool.parameters
                     )
+                    specs.append(spec)
+                    tool_index[spec.name] = _BuiltinTool(name=tool.name)
+        if specs:
+            native_tools = capabilities is not None and capabilities.tools == ToolSupport.NATIVE
+            if native_tools:
+                request_tools = tuple(specs)
+            else:
+                messages.append(ChatMessage(role="system", content=build_tool_prompt(specs)))
 
         messages.append(ChatMessage(role="user", content=content))
 

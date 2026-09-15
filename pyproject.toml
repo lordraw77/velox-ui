@@ -74,6 +74,9 @@ builtin-images = "velox_ui.plugins.builtin.images:OpenAICompatImagePlugin"
 [project.entry-points."velox_ui.voice"]
 builtin-voice = "velox_ui.plugins.builtin.voice:OpenAICompatVoicePlugin"
 
+[project.entry-points."velox_ui.tools"]
+builtin-websearch = "velox_ui.plugins.builtin.websearch:SearxngToolPlugin"
+
 [project.urls]
 Homepage = "https://github.com/lordraw77/velox-ui"
 Documentation = "https://github.com/lordraw77/velox-ui/tree/main/docs"

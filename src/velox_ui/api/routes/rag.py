@@ -524,28 +524,30 @@ async def follow_rag_job(job_id: str, principal: CurrentPrincipal, state: State)
     )
 
 
-@router.post("/api/websearch", status_code=501, summary="Web search as a RAG source")
+@router.post("/api/websearch", summary="Web search")
 async def websearch(
     payload: WebSearchRequest, principal: CurrentPrincipal, state: State
 ) -> Any:
-    """Run a configured search provider and return results as ingestable documents.
+    """Run the configured builtin websearch plugin and return results as text.
 
-    No search-provider configuration concept exists anywhere else in this codebase
-    (checked ``settings.py`` and every ``ProviderSettings``/preset before writing
-    this route), and building one — an API key, a provider choice between something
-    like Tavily/Brave/SearXNG, result-to-document mapping — is out of scope for this
-    phase's brief. This is therefore a typed stub, not a real integration: it always
-    answers ``not_configured`` rather than partially implementing a feature with no
-    way to configure it.
+    Backed by the same ``"tools"`` plugin (ADR-0014, ADR-0021) a chat's builtin
+    ``web_search`` tool call uses (``services/chat.py``) — this route is a direct,
+    synchronous way to run the identical search outside a chat turn. Results are
+    returned as-is, **not** ingested into a RAG collection; turning a search into a
+    knowledge-base document is a separate feature this does not touch.
     """
-    del payload, principal, state
-    return json_response(
-        {
-            "error": {
-                "code": "unsupported_capability",
-                "message": "No web search provider is configured.",
-                "retryable": False,
-            }
-        },
-        status_code=501,
-    )
+    del principal
+    tool_plugin = await state.plugins.get("tools")
+    if tool_plugin is None:
+        return json_response(
+            {
+                "error": {
+                    "code": "unsupported_capability",
+                    "message": "No web search provider is configured.",
+                    "retryable": False,
+                }
+            },
+            status_code=501,
+        )
+    results = await tool_plugin.call("web_search", {"query": payload.query})
+    return json_response({"query": payload.query, "results": results})
