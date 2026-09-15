@@ -247,9 +247,10 @@ class CustomModel(Base):
     Binds a system prompt and parameters to a slug, so a chat can be started from it
     directly.
 
-    ``knowledge_ids`` (RAG collections, phase 7) and ``tools`` (MCP server ids, phase 8)
-    are both acted on as of their respective phases; ``fallback_chain`` is still carried
-    but unused.
+    ``knowledge_ids`` (RAG collections, phase 7), ``tools`` (MCP server ids, phase 8)
+    and ``plugins`` (enabled plugin kinds, e.g. ``["images", "voice"]``, phase 10) are
+    all acted on as of their respective phases; ``fallback_chain`` is still carried but
+    unused.
     """
 
     __tablename__ = "custom_model"
@@ -266,6 +267,7 @@ class CustomModel(Base):
     params: Mapped[Json | None]
     tools: Mapped[Json | None]
     knowledge_ids: Mapped[Json | None]
+    plugins: Mapped[Json | None]
     fallback_chain: Mapped[Json]
     visibility: Mapped[str] = shortstr(16)
     created_at: Mapped[Timestamp]

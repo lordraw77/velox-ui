@@ -65,6 +65,15 @@ dev = [
 [project.scripts]
 velox = "velox_ui.cli:main"
 
+# Builtin plugins (ADR-0014), registered the same way a third-party plugin would be.
+# Both are disabled by default; discovery reads only this metadata, never importing
+# the target until a plugin is enabled and actually used (`plugins/loader.py`).
+[project.entry-points."velox_ui.images"]
+builtin-images = "velox_ui.plugins.builtin.images:OpenAICompatImagePlugin"
+
+[project.entry-points."velox_ui.voice"]
+builtin-voice = "velox_ui.plugins.builtin.voice:OpenAICompatVoicePlugin"
+
 [project.urls]
 Homepage = "https://github.com/lordraw77/velox-ui"
 Documentation = "https://github.com/lordraw77/velox-ui/tree/main/docs"

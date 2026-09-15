@@ -32,7 +32,7 @@ from velox_ui.db.repositories.rag import (
 from velox_ui.errors import ForbiddenError, NotFoundError
 from velox_ui.rag.chunking import ChunkingConfig
 from velox_ui.rag.embedders.registry import dim_for_ref
-from velox_ui.security.uploads import store_upload, validate_upload
+from velox_ui.security.uploads import read_upload, store_upload, validate_upload
 from velox_ui.services.rag_jobs import rag_job_events
 
 router = APIRouter(tags=["rag"])
@@ -209,9 +209,28 @@ async def get_file(file_id: str, principal: CurrentPrincipal, state: State) -> F
     """
     async with state.db.session() as session:
         file = await FileRepository(session).get(file_id)
-    if file is None or file.user_id != principal.user_id:
-        raise NotFoundError("No such file.")
-    return FileResponse(**_struct_dict(file_to_summary(file)))
+        if file is None or file.user_id != principal.user_id:
+            raise NotFoundError("No such file.")
+        summary = file_to_summary(file)
+    return FileResponse(**_struct_dict(summary))
+
+
+@router.get("/api/files/{file_id}/content", summary="Get a file's raw bytes")
+async def get_file_content(
+    file_id: str, principal: CurrentPrincipal, state: State
+) -> StreamingResponse:
+    """Return a file's bytes, for inline rendering (e.g. a generated image).
+
+    Raises:
+        NotFoundError: If it does not exist, or is not the caller's.
+    """
+    async with state.db.session() as session:
+        file = await FileRepository(session).get(file_id)
+        if file is None or file.user_id != principal.user_id:
+            raise NotFoundError("No such file.")
+        storage_key, content_type = file.storage_key, file.content_type
+    data = read_upload(state.settings.data_dir, storage_key)
+    return StreamingResponse(iter([data]), media_type=content_type)
 
 
 @router.delete("/api/files/{file_id}", status_code=204, summary="Delete a file")

@@ -356,13 +356,13 @@ def _parse_tree(chat_obj: Mapping[str, Any]) -> tuple[tuple[_Node, ...], str | N
 
     flat = chat_obj.get("messages")
     if isinstance(flat, list) and flat:
-        nodes = []
+        flat_nodes: list[_Node] = []
         previous_id: str | None = None
         for index, raw in enumerate(flat):
             if not isinstance(raw, dict) or not isinstance(raw.get("role"), str):
                 continue
             source_id = str(raw.get("id") or index)
-            nodes.append(
+            flat_nodes.append(
                 _Node(
                     source_id=source_id,
                     parent_id=previous_id,
@@ -373,7 +373,7 @@ def _parse_tree(chat_obj: Mapping[str, Any]) -> tuple[tuple[_Node, ...], str | N
                 )
             )
             previous_id = source_id
-        return tuple(nodes), previous_id
+        return tuple(flat_nodes), previous_id
 
     return (), None
 

@@ -29,13 +29,16 @@ from velox_ui.api.middleware import MetricsMiddleware, RequestContextMiddleware
 from velox_ui.api.routes import (
     admin,
     apikeys,
+    audio,
     auth,
     chats,
     custom_models,
     folders,
+    images,
     local_models,
     mcp,
     models,
+    plugins,
     providers,
     rag,
     search,
@@ -119,6 +122,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(rag.router)
     app.include_router(mcp.router)
     app.include_router(tools.router)
+    app.include_router(plugins.router)
+    app.include_router(images.router)
+    app.include_router(audio.router)
     app.include_router(admin.router)
 
     # Last, so the single-page fallback cannot shadow an API route.

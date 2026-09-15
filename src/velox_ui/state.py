@@ -23,6 +23,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; importing httpx here would
     import httpx
 
     from velox_ui.mcp.manager import McpManager
+    from velox_ui.plugins.loader import PluginRegistry
     from velox_ui.services.model_jobs import ModelJobs
     from velox_ui.services.model_params import ModelParamsStore
     from velox_ui.services.rag_jobs import RagJobs
@@ -50,6 +51,7 @@ class AppState:
         "_mcp",
         "_model_jobs",
         "_model_params",
+        "_plugins",
         "_rag_jobs",
         "_tasks",
         "db",
@@ -75,6 +77,7 @@ class AppState:
         self._model_params: ModelParamsStore | None = None
         self._rag_jobs: RagJobs | None = None
         self._mcp: McpManager | None = None
+        self._plugins: PluginRegistry | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
 
     @property
@@ -112,6 +115,15 @@ class AppState:
 
             self._mcp = McpManager(self)
         return self._mcp
+
+    @property
+    def plugins(self) -> PluginRegistry:
+        """Configured image/voice plugins (ADR-0014), created on first use."""
+        if self._plugins is None:
+            from velox_ui.plugins.loader import PluginRegistry
+
+            self._plugins = PluginRegistry(self)
+        return self._plugins
 
     @property
     def http(self) -> httpx.AsyncClient:

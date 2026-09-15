@@ -46,6 +46,7 @@ class CreateCustomModelRequest(BaseModel):
     params: dict[str, Any] | None = None
     knowledge_ids: list[str] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
+    plugins: list[str] = Field(default_factory=list)
     fallback_chain: list[FallbackEntryRequest] = Field(default_factory=list)
     visibility: str = "private"
 
@@ -77,6 +78,7 @@ class UpdateCustomModelRequest(BaseModel):
     params: dict[str, Any] | None = None
     knowledge_ids: list[str] | None = None
     tools: list[str] | None = None
+    plugins: list[str] | None = None
     fallback_chain: list[FallbackEntryRequest] | None = None
     visibility: str | None = None
 
@@ -101,6 +103,7 @@ class CustomModelResponse(BaseModel):
     params: dict[str, Any] | None
     knowledge_ids: list[str]
     tools: list[str]
+    plugins: list[str]
     fallback_chain: list[FallbackEntryRequest]
     visibility: str
     created_at: int
@@ -120,6 +123,7 @@ def _to_response(model: CustomModelSummary) -> CustomModelResponse:
         params=model.params,
         knowledge_ids=list(model.knowledge_ids),
         tools=list(model.tools),
+        plugins=list(model.plugins),
         fallback_chain=[
             FallbackEntryRequest(provider_id=entry.provider_id, model_key=entry.model_key)
             for entry in model.fallback_chain
@@ -165,6 +169,7 @@ async def create_custom_model(
             params=payload.params,
             knowledge_ids=payload.knowledge_ids,
             tools=payload.tools,
+            plugins=payload.plugins,
             fallback_chain=[
                 FallbackEntry(provider_id=entry.provider_id, model_key=entry.model_key)
                 for entry in payload.fallback_chain
@@ -228,6 +233,7 @@ async def update_custom_model(
             params=payload.params,
             knowledge_ids=payload.knowledge_ids,
             tools=payload.tools,
+            plugins=payload.plugins,
             fallback_chain=chain,
             visibility=payload.visibility,
         )
