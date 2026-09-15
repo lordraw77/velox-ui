@@ -23,6 +23,8 @@ examples:
   velox config check                   validate the configuration and print it
   velox migrate up                     bring the database schema up to date
   velox bench                          run the performance suite
+  velox import openwebui export.json --user alice@example.com
+                                        import chats from an Open WebUI export
 """
 
 
@@ -70,6 +72,19 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--case", action="append", help="Run only the named case. Repeatable.")
     bench.add_argument("--json", metavar="PATH", help="Write results as JSON to this path.")
 
+    import_cmd = subcommands.add_parser("import", help="Import chats from another interface.")
+    import_actions = import_cmd.add_subparsers(dest="import_command", metavar="<source>")
+    openwebui = import_actions.add_parser("openwebui", help="Import an Open WebUI chat export.")
+    openwebui.add_argument("path", help="Path to the export JSON file.")
+    openwebui.add_argument(
+        "--user", required=True, metavar="EMAIL", help="Account the chats are imported into."
+    )
+    openwebui.add_argument(
+        "--folders",
+        metavar="PATH",
+        help="Open WebUI folders export JSON, to preserve folder names.",
+    )
+
     return parser
 
 
@@ -94,6 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "config": _config,
         "migrate": _migrate,
         "bench": _bench,
+        "import": _import,
     }
     try:
         return handlers[args.command](args)
@@ -315,6 +331,70 @@ def _bench(args: argparse.Namespace) -> int:
         )
         return 2
     return run_cli(cases=args.case, json_path=args.json)
+
+
+def _import(args: argparse.Namespace) -> int:
+    """Import chats from another interface."""
+    if args.import_command != "openwebui":
+        build_parser().parse_args(["import", "--help"])
+        return 2
+
+    import asyncio
+    import json
+
+    from velox_ui.db.engine import Database
+    from velox_ui.db.repositories.users import UserRepository
+    from velox_ui.services.importers.openwebui import import_export, parse_export
+    from velox_ui.settings import Settings
+
+    settings = _load(args)
+    assert isinstance(settings, Settings)  # noqa: S101 - narrowing for the type checker
+
+    try:
+        with open(args.path, "rb") as handle:
+            raw = handle.read()
+        entries = parse_export(raw)
+    except (OSError, ValueError) as exc:
+        print(f"velox: {exc}", file=sys.stderr)
+        return 2
+
+    folder_names: dict[str, str] | None = None
+    if args.folders:
+        try:
+            with open(args.folders, "rb") as handle:
+                folder_entries = json.loads(handle.read())
+            folder_names = {
+                str(f["id"]): str(f["name"])
+                for f in folder_entries
+                if isinstance(f, dict) and "id" in f and "name" in f
+            }
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"velox: could not read --folders: {exc}", file=sys.stderr)
+            return 2
+
+    async def _run() -> int:
+        database = Database(settings.database_url)
+        try:
+            async with database.session() as session:
+                user = await UserRepository(session).by_email(args.user)
+                user_id = user.id if user is not None else None
+            if user_id is None:
+                print(f"velox: no account with email {args.user!r}", file=sys.stderr)
+                return 1
+
+            async with database.write() as session:
+                report = await import_export(
+                    session, user_id=user_id, entries=entries, folder_names=folder_names
+                )
+        finally:
+            await database.dispose()
+
+        print(f"imported {report.imported} chat(s)")
+        for skip in report.skipped:
+            print(f"  skipped {skip.source_id} ({skip.title!r}): {skip.reason}")
+        return 0
+
+    return asyncio.run(_run())
 
 
 if __name__ == "__main__":  # pragma: no cover

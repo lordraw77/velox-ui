@@ -7,7 +7,7 @@ with Open WebUI, built for latency and a small footprint.
 loading a model is reported as its own state rather than as a timeout, and a host that
 is switched off degrades to an offline badge instead of an error.
 
-> **Status: phase 8 of 10.** There is a working product: configuration, database,
+> **Status: phase 9 of 10.** There is a working product: configuration, database,
 > authentication, the conversation tree, the provider abstraction with local (Ollama,
 > llama.cpp) and cloud (Groq, OpenRouter, Mistral, NVIDIA, Cloudflare, Gemini,
 > Anthropic, OpenAI) adapters, local model management, a web interface with streaming,
@@ -15,14 +15,16 @@ is switched off degrades to an offline badge instead of an error.
 > pin/archive), full-text search, custom model presets, an admin user console, RAG
 > (knowledge-base collections, document upload and ingestion, sqlite-vec/pgvector
 > retrieval, citations streamed into chats whose custom model carries
-> `knowledge_ids`), and now MCP and tool calling: stdio and Streamable HTTP MCP
-> servers, an approval gate for tool calls, native tool calling on the
-> OpenAI-compatible and Anthropic adapters, prompt-based emulation for models without
-> native support, and a bounded tool-call loop streamed into chats whose custom model
-> carries `tools`. Verified in a real browser against a real Ollama host. Still to
-> come: Open WebUI import (9), plugins and packaging (10). The plan is in
-> [docs/design/00-overview.md](docs/design/00-overview.md); nothing below is claimed to
-> work unless it is marked as shipped.
+> `knowledge_ids`), MCP and tool calling (stdio and Streamable HTTP MCP servers, an
+> approval gate for tool calls, native tool calling on the OpenAI-compatible and
+> Anthropic adapters, prompt-based emulation for models without native support, and a
+> bounded tool-call loop streamed into chats whose custom model carries `tools`), and
+> now Open WebUI import: `velox import openwebui` reconstructs the branching message
+> tree, tags and folders from Open WebUI's own chat export, idempotent by source chat
+> id ([docs/migration-openwebui.md](docs/migration-openwebui.md)). Verified in a real
+> browser against a real Ollama host. Still to come: optional plugins and packaging
+> (10). The plan is in [docs/design/00-overview.md](docs/design/00-overview.md);
+> nothing below is claimed to work unless it is marked as shipped.
 
 ## Quickstart
 

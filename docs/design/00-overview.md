@@ -82,7 +82,10 @@ Each phase ends working, tested and benchmarked before the next begins.
    chat, same activation pattern as phase 7's `knowledge_ids`. No built-in
    (non-MCP) tool ships this phase (ADR-0020); ADR-0014's plugin mechanism is the
    documented path for adding one.
-9. Open WebUI import.
+9. ~~Open WebUI import.~~ **Done** — `velox import openwebui` reads Open WebUI's own
+   chat export (not its database file), reconstructing the branching message tree,
+   tags and, given a folder export, folder names; idempotent by the source chat id, so
+   re-running an import is a no-op ([docs/migration-openwebui.md](../migration-openwebui.md)).
 10. Optional plugins (images, voice), packaging, documentation.
 
 ## Decisions taken at review

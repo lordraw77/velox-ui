@@ -125,8 +125,18 @@ class ChatRepository:
         folder_id: str | None = None,
         model_ref: str | None = None,
         custom_model_id: str | None = None,
+        pinned: bool = False,
+        archived: bool = False,
+        meta: dict[str, Any] | None = None,
+        created_at: int | None = None,
+        updated_at: int | None = None,
     ) -> Chat:
-        """Create an empty conversation."""
+        """Create an empty conversation.
+
+        ``created_at``/``updated_at`` default to now; an importer passes the source
+        system's original timestamps so an imported chat sorts and reads as it did
+        there instead of appearing to have just been created.
+        """
         moment = now_ms()
         chat = Chat(
             id=new_ulid(),
@@ -136,12 +146,12 @@ class ChatRepository:
             active_leaf_id=None,
             model_ref=model_ref,
             custom_model_id=custom_model_id,
-            pinned=False,
-            archived=False,
+            pinned=pinned,
+            archived=archived,
             message_count=0,
-            meta=None,
-            created_at=moment,
-            updated_at=moment,
+            meta=meta,
+            created_at=created_at if created_at is not None else moment,
+            updated_at=updated_at if updated_at is not None else moment,
             deleted_at=None,
         )
         self._session.add(chat)
@@ -250,6 +260,8 @@ class ChatRepository:
         model_ref: str | None = None,
         message_id: str | None = None,
         depth: int | None = None,
+        created_at: int | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> Message:
         """Insert a message node.
 
@@ -263,6 +275,9 @@ class ChatRepository:
             message_id: Pre-generated id. The streaming path allocates the id before
                 the row exists so it can be sent to the client immediately (ADR-0005).
             depth: Pre-computed depth. Looked up from the parent when omitted.
+            created_at: Original timestamp, for an importer replaying history. Defaults
+                to now.
+            meta: Arbitrary structured payload, e.g. import provenance.
 
         Returns:
             The pending :class:`~velox_ui.db.models.Message`.
@@ -284,8 +299,8 @@ class ChatRepository:
             cost_micros=None,
             timings=None,
             error=None,
-            meta=None,
-            created_at=now_ms(),
+            meta=meta,
+            created_at=created_at if created_at is not None else now_ms(),
         )
         self._session.add(message)
         return message
