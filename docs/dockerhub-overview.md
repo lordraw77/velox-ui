@@ -5,10 +5,9 @@ Paste its contents (everything below the line) into the repository's **Overview*
 field, or point an automated `docker/build-push-action` + `peter-evans/dockerhub-description`
 step at it.
 
-Replace `YOUR_NAMESPACE` with the Docker Hub account the image is published under.
-No image has been pushed to a registry yet — CI builds and size-checks the image
-but does not publish it (`.github/workflows/ci.yml`), so the pull commands below
-only work once that is set up.
+The image is published as [`lordraw/velox-ui`](https://hub.docker.com/r/lordraw/velox-ui).
+Note that CI currently builds and size-checks the image but does not push it
+(`.github/workflows/ci.yml`), so releases are manual until a publish step is added.
 
 ---
 
@@ -26,7 +25,7 @@ docker run -d \
   --name velox-ui \
   -p 8080:8080 \
   -v velox-data:/data \
-  YOUR_NAMESPACE/velox-ui:latest
+  lordraw/velox-ui:latest
 ```
 
 Open `http://localhost:8080` and create the first account — it becomes the
@@ -95,7 +94,7 @@ credentials are stored encrypted.
 ```yaml
 services:
   velox-ui:
-    image: YOUR_NAMESPACE/velox-ui:latest
+    image: lordraw/velox-ui:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
