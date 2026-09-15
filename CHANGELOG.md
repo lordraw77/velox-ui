@@ -8,6 +8,18 @@ aspirational.
 
 ### Added
 
+- Web search and browsing as model-invokable tools: a builtin `"tools"`
+  plugin (ADR-0014's dormant `velox_ui.tools` entry-point group, first used
+  here) over a self-hosted SearXNG instance, offering `web_search` and
+  `web_browse` with no approval gate. Wired into the real tool-calling loop
+  in `services/chat.py`, not just a UI button — a custom model's "Web search
+  & browsing" checkbox (`CustomModel.plugins`, finally consumed by the
+  frontend) resolves into `web_tools: true` on a completion request the same
+  way MCP's `tool_server_ids` already works. `web_browse` is SSRF-guarded:
+  every hostname and every redirect hop is checked against
+  loopback/private/link-local/reserved/multicast ranges before being
+  fetched. `GET /api/tools` and `POST /api/websearch` (a phase-7 stub) both
+  now reflect this plugin when enabled.
 - Phase 10 — optional plugins, packaging, documentation. Image generation and
   voice (STT/TTS) ship as builtin entry-point plugins (ADR-0014) that are thin
   OpenAI-compatible HTTP clients (ADR-0021), disabled by default and never

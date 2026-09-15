@@ -73,21 +73,29 @@ Per-preset environment variables: `VELOX_PROVIDER_<PRESET>_HOSTS` and
 `VELOX_PROVIDER_<PRESET>_API_KEY`, e.g. `VELOX_PROVIDER_VLLM_HOSTS`,
 `VELOX_PROVIDER_ANTHROPIC_API_KEY`.
 
-## Plugins (images, voice)
+## Plugins (images, voice, web tools)
 
-Not part of `velox.toml` — image generation and voice (STT/TTS) are runtime
-singletons (ADR-0014), disabled by default, configured through the
-interface's **Plugins** page or directly:
+Not part of `velox.toml` — these are runtime singletons (ADR-0014), disabled
+by default, configured through the interface's **Plugins** page or directly:
 
 ```
 PUT /api/plugins/images  {"enabled": true, "base_url": "...", "model": "...", "api_key": "..."}
 PUT /api/plugins/voice   {"enabled": true, "base_url": "...", "model": "...", "tts_voice": "...", "api_key": "..."}
+PUT /api/plugins/tools   {"enabled": true, "base_url": "..."}
 ```
 
-Both point at an OpenAI-compatible host — cloud or self-hosted — for
-`/v1/images/generations`, `/v1/audio/transcriptions` and
+Images and voice point at an OpenAI-compatible host — cloud or self-hosted —
+for `/v1/images/generations`, `/v1/audio/transcriptions` and
 `/v1/audio/speech` (ADR-0021); neither ships a bundled model. The API key,
 if any, is encrypted at rest the same way a provider's is.
+
+`tools` points at a self-hosted SearXNG instance and, once enabled, offers a
+chat model two tools it can call mid-turn: `web_search` and `web_browse` (no
+API key needed, no approval gate — they run immediately when called). A
+custom model surfaces them by including `"tools"` in its `plugins` list
+(the "Web search & browsing" checkbox in **Custom models**); the client
+resolves that into `web_tools: true` on the completion request, the same
+pattern `tool_server_ids` already uses for MCP servers.
 
 ## Secrets
 

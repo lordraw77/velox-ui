@@ -113,10 +113,11 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 
 `POST /api/chats/{id}/completions` responds `text/event-stream`. The request carries
 the parent message id, the user content, the model reference (or custom model slug),
-per-turn parameter overrides, `knowledge_ids` (RAG) and `tool_server_ids` (phase 8: MCP
-server ids to offer tools from — the client resolves this from the chat's custom model
-the same way it already resolves `knowledge_ids`). The response event types are a
-closed set, versioned by the `event:` field:
+per-turn parameter overrides, `knowledge_ids` (RAG), `tool_server_ids` (phase 8: MCP
+server ids to offer tools from) and `web_tools` (bool: whether to also offer the
+enabled builtin `"tools"` plugin's tools — web search and browsing, ADR-0014) — the
+client resolves all three from the chat's custom model the same way. The response
+event types are a closed set, versioned by the `event:` field:
 
 ```
 event: start        {"message_id": "...", "model_ref": "...", "resolved_from": "..."}
@@ -140,7 +141,8 @@ As implemented (phase 8): a turn that offers tools can run several `tool_call`/
 [ADR-0020](../adr/0020-mcp-transport-and-tool-calling-strategy.md). `tool_call.approval`
 is `"required"` when the owning MCP server's `approval` mode (`always`/`once`, and
 `once` for a tool not already approved this process) means the turn is now blocked on
-`POST /api/tools/approve`; `"auto"` means it ran immediately. Only the turn's final
+`POST /api/tools/approve`; `"auto"` means it ran immediately — always the case for a
+builtin plugin tool (`web_tools`), which has no approval gate at all. Only the turn's final
 reply is persisted as a `message` row — the intermediate tool-call/result exchange is
 not replayed on a later turn, but is attached to that row's `meta.tool_trace` so a
 reopened chat can still show what happened (ADR-0020).
@@ -162,12 +164,14 @@ message `stopped`; `POST /stop` does the same from another tab.
 | GET/PATCH/DELETE | `/api/custom-models/{id}` | **phase 6** a private model owned by someone else answers 403/404 |
 | GET/POST/PATCH/DELETE | `/api/prompts…` | not yet implemented |
 
-`tools`, `knowledge_ids` and `fallback_chain` are carried on `custom_model`.
+`tools`, `knowledge_ids`, `plugins` and `fallback_chain` are carried on `custom_model`.
 `knowledge_ids` (phase 7) and `tools` (phase 8) are both acted on: `tools` is a list of
 `mcp_server` ids, resolved into that server's cached tool list the same way
 `knowledge_ids` is resolved into retrieved chunks — client-side, when starting a chat
 from the custom model, then sent on `POST .../completions` as `tool_server_ids`.
-`fallback_chain` is still carried but unused by any phase so far.
+`plugins` is a list of enabled plugin kinds (`"images"`, `"voice"` gate composer
+buttons; `"tools"` is resolved into `web_tools: true` the same way `tool_server_ids`
+is). `fallback_chain` is still carried but unused by any phase so far.
 
 ## Files and RAG
 
@@ -181,7 +185,7 @@ from the custom model, then sent on `POST .../completions` as `tool_server_ids`.
 | DELETE | `/api/documents/{id}` | |
 | POST | `/api/collections/{id}/query` | debug/preview retrieval |
 | GET | `/api/rag-jobs/{id}/events` | **S** ingest/embed progress. Its own prefix rather than a shared `/api/jobs/{id}`: this codebase keeps one in-memory job registry per subsystem (`/api/model-jobs` already does the same for downloads, ADR-0017; ADR-0019 does the same for RAG) rather than a single job table/endpoint, so there is no shared registry to serve a generic path from. |
-| POST | `/api/websearch` | typed stub (`501 unsupported_capability`): no search-provider configuration exists anywhere in this codebase yet, so this deliberately does not half-implement an unbriefed feature |
+| POST | `/api/websearch` | runs the enabled builtin `"tools"` plugin's search directly (`501 unsupported_capability` if none is enabled); results are returned as-is, not ingested into a collection |
 
 ## Tools and MCP
 
@@ -192,7 +196,7 @@ from the custom model, then sent on `POST .../completions` as `tool_server_ids`.
 | GET | `/api/mcp/servers/{id}/tools` | **phase 8** the cached list, no reconnect |
 | POST | `/api/mcp/servers/import` | translates a Claude Code `mcpServers` config into one or more servers (`services/mcp_import.py`); credentials in `env`/`headers` land as plain config, not encrypted |
 | POST | `/api/tools/approve` | **phase 8** approve or reject a pending tool call raised by a stream's `tool_call` event; `{call_id, approved, remember}` |
-| GET | `/api/tools` | **phase 8** every tool the caller's enabled MCP servers currently cache; MCP-only — no built-in tool ships this phase (ADR-0020) |
+| GET | `/api/tools` | every tool the caller's enabled MCP servers currently cache, plus the enabled builtin `"tools"` plugin's own tools (`server_id: "builtin"`), if any |
 
 ## OpenAI-compatible gateway
 
