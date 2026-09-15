@@ -44,6 +44,7 @@
     max_tokens: string;
     knowledge_ids: string[];
     tools: string[];
+    plugins: string[];
     fallback_chain: FallbackEntry[];
     visibility: CustomModelVisibility;
   }
@@ -59,6 +60,7 @@
       max_tokens: "",
       knowledge_ids: [],
       tools: [],
+      plugins: [],
       fallback_chain: [],
       visibility: "private",
     };
@@ -100,6 +102,7 @@
       max_tokens: model.params?.max_tokens !== undefined ? String(model.params.max_tokens) : "",
       knowledge_ids: [...model.knowledge_ids],
       tools: [...model.tools],
+      plugins: [...model.plugins],
       fallback_chain: [...model.fallback_chain],
       visibility: model.visibility,
     };
@@ -115,6 +118,12 @@
     draft.tools = checked
       ? [...draft.tools, serverId]
       : draft.tools.filter((id) => id !== serverId);
+  }
+
+  function togglePlugin(kind: string, checked: boolean): void {
+    draft.plugins = checked
+      ? [...draft.plugins, kind]
+      : draft.plugins.filter((k) => k !== kind);
   }
 
   function cancelEdit(): void {
@@ -147,6 +156,7 @@
         params: draftParams(),
         knowledge_ids: draft.knowledge_ids,
         tools: draft.tools,
+        plugins: draft.plugins,
         fallback_chain: draft.fallback_chain.filter((entry) => entry.provider_id && entry.model_key),
         visibility: draft.visibility,
       };
@@ -319,6 +329,19 @@
                   {/each}
                 </div>
               {/if}
+            </div>
+
+            <div class="field wide">
+              <label class="knowledge-item">
+                <input
+                  type="checkbox"
+                  checked={draft.plugins.includes("tools")}
+                  onchange={(event) =>
+                    togglePlugin("tools", (event.target as HTMLInputElement).checked)}
+                />
+                {app.t("custommodel.webTools")}
+              </label>
+              <p class="hint">{app.t("custommodel.webToolsHint")}</p>
             </div>
 
             <div class="field wide">

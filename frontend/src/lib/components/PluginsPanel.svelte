@@ -1,7 +1,8 @@
 <!--
-  Image generation and voice (STT/TTS) plugins: enable, point at an OpenAI-compatible
-  backend, and validate the connection (ADR-0014, ADR-0021). Both are singletons — at
-  most one configured backend per kind — so this is a form per kind, not a list.
+  Image generation, voice (STT/TTS) and builtin tools (web search/browsing) plugins:
+  enable, point at a backend, and validate the connection (ADR-0014, ADR-0021). Each
+  is a singleton — at most one configured backend per kind — so this is a form per
+  kind, not a list.
 -->
 <script lang="ts">
   import { onMount } from "svelte";
@@ -9,19 +10,36 @@
   import type { PluginInfo, PluginKind } from "$lib/api/types";
   import { app } from "$lib/stores/app.svelte";
 
-  let plugins = $state<Record<PluginKind, PluginInfo | null>>({ images: null, voice: null });
+  const KINDS = ["images", "voice", "tools"] as const;
+  const TITLE_KEY: Record<PluginKind, string> = {
+    images: "plugins.images",
+    voice: "plugins.voice",
+    tools: "plugins.tools",
+  };
+  const HINT_KEY: Record<PluginKind, string> = {
+    images: "plugins.imagesHint",
+    voice: "plugins.voiceHint",
+    tools: "plugins.toolsHint",
+  };
+
+  let plugins = $state<Record<PluginKind, PluginInfo | null>>({
+    images: null,
+    voice: null,
+    tools: null,
+  });
   let loading = $state(true);
 
-  let baseUrl = $state<Record<PluginKind, string>>({ images: "", voice: "" });
-  let model = $state<Record<PluginKind, string>>({ images: "", voice: "" });
+  let baseUrl = $state<Record<PluginKind, string>>({ images: "", voice: "", tools: "" });
+  let model = $state<Record<PluginKind, string>>({ images: "", voice: "", tools: "" });
   let ttsVoice = $state("");
-  let apiKey = $state<Record<PluginKind, string>>({ images: "", voice: "" });
+  let apiKey = $state<Record<PluginKind, string>>({ images: "", voice: "", tools: "" });
 
   let saving = $state<PluginKind | null>(null);
   let validating = $state<PluginKind | null>(null);
   let validation = $state<Record<PluginKind, { ok: boolean; detail: string } | null>>({
     images: null,
     voice: null,
+    tools: null,
   });
 
   onMount(load);
@@ -86,17 +104,15 @@
     {#if loading}
       <span class="spinner"></span>
     {:else}
-      {#each ["images", "voice"] as const as kind}
+      {#each KINDS as kind}
         <section class="card">
           <div class="title-row">
-            <h2>{app.t(kind === "images" ? "plugins.images" : "plugins.voice")}</h2>
+            <h2>{app.t(TITLE_KEY[kind])}</h2>
             {#if plugins[kind]?.enabled}
               <span class="badge">{app.t("plugins.enabled")}</span>
             {/if}
           </div>
-          <p class="hint">
-            {app.t(kind === "images" ? "plugins.imagesHint" : "plugins.voiceHint")}
-          </p>
+          <p class="hint">{app.t(HINT_KEY[kind])}</p>
 
           <form
             class="stack"
@@ -110,34 +126,38 @@
               <input
                 id="plugin-{kind}-url"
                 bind:value={baseUrl[kind]}
-                placeholder="http://localhost:9000"
+                placeholder={kind === "tools" ? "http://localhost:8080" : "http://localhost:9000"}
                 required
               />
             </div>
-            <div class="field">
-              <label for="plugin-{kind}-model">{app.t("plugins.model")}</label>
-              <input id="plugin-{kind}-model" bind:value={model[kind]} />
-            </div>
+            {#if kind !== "tools"}
+              <div class="field">
+                <label for="plugin-{kind}-model">{app.t("plugins.model")}</label>
+                <input id="plugin-{kind}-model" bind:value={model[kind]} />
+              </div>
+            {/if}
             {#if kind === "voice"}
               <div class="field">
                 <label for="plugin-voice-tts">{app.t("plugins.ttsVoice")}</label>
                 <input id="plugin-voice-tts" bind:value={ttsVoice} placeholder="alloy" />
               </div>
             {/if}
-            <div class="field">
-              <label for="plugin-{kind}-key">{app.t("plugins.apiKey")}</label>
-              <input
-                id="plugin-{kind}-key"
-                type="password"
-                bind:value={apiKey[kind]}
-                autocomplete="off"
-              />
-              <p class="hint">
-                {plugins[kind]?.auth_hint
-                  ? app.t("plugins.apiKeySet", { hint: plugins[kind]?.auth_hint ?? "" })
-                  : app.t("plugins.apiKeyHint")}
-              </p>
-            </div>
+            {#if kind !== "tools"}
+              <div class="field">
+                <label for="plugin-{kind}-key">{app.t("plugins.apiKey")}</label>
+                <input
+                  id="plugin-{kind}-key"
+                  type="password"
+                  bind:value={apiKey[kind]}
+                  autocomplete="off"
+                />
+                <p class="hint">
+                  {plugins[kind]?.auth_hint
+                    ? app.t("plugins.apiKeySet", { hint: plugins[kind]?.auth_hint ?? "" })
+                    : app.t("plugins.apiKeyHint")}
+                </p>
+              </div>
+            {/if}
             <div class="row-actions">
               {#if plugins[kind]?.enabled}
                 <button

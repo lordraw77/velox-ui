@@ -44,6 +44,7 @@ interface PendingCustomModel {
   params: Record<string, ParamValue> | null;
   knowledgeIds: string[];
   toolServerIds: string[];
+  webToolsEnabled: boolean;
 }
 
 /** How often a streaming message's markdown is re-rendered, in milliseconds. */
@@ -149,6 +150,7 @@ class ConversationStore {
       params: model.params,
       knowledgeIds: model.knowledge_ids,
       toolServerIds: model.tools,
+      webToolsEnabled: model.plugins.includes("tools"),
     };
   }
 
@@ -255,6 +257,7 @@ class ConversationStore {
           params: startingModel?.params ?? undefined,
           knowledge_ids: startingModel?.knowledgeIds ?? undefined,
           tool_server_ids: startingModel?.toolServerIds ?? undefined,
+          web_tools: startingModel?.webToolsEnabled ?? undefined,
         },
         this.#controller.signal,
       );

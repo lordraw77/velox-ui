@@ -313,6 +313,7 @@ export interface CustomModel {
   params: Record<string, ParamValue> | null;
   knowledge_ids: string[];
   tools: string[];
+  plugins: string[];
   fallback_chain: FallbackEntry[];
   visibility: CustomModelVisibility;
   created_at: number;
@@ -458,7 +459,7 @@ export interface ToolTraceEntry {
 
 // --- plugins: images and voice (phase 10) -------------------------------------------
 
-export type PluginKind = "images" | "voice";
+export type PluginKind = "images" | "voice" | "tools";
 
 export interface PluginInfo {
   name: string;

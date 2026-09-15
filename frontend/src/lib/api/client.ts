@@ -445,6 +445,7 @@ export class ApiClient {
     params?: Record<string, ParamValue> | null;
     knowledge_ids?: string[];
     tools?: string[];
+    plugins?: string[];
     fallback_chain?: FallbackEntry[];
     visibility?: CustomModelVisibility;
   }): Promise<CustomModel> {
@@ -460,6 +461,7 @@ export class ApiClient {
       params?: Record<string, ParamValue> | null;
       knowledge_ids?: string[];
       tools?: string[];
+      plugins?: string[];
       fallback_chain?: FallbackEntry[];
       visibility?: CustomModelVisibility;
     },
