@@ -577,8 +577,7 @@ class ChatService:
                 specs.append(spec)
                 tool_index[spec.name] = server_tool
         if web_tools:
-            tool_plugin = await self._state.plugins.get("tools")
-            if tool_plugin is not None:
+            for tool_plugin in await self._state.plugins.tool_plugins():
                 for tool in tool_plugin.tools():
                     spec = ToolSpec(
                         name=tool.name, description=tool.description, parameters=tool.parameters

@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from importlib import metadata
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Literal, cast, overload
 
 from velox_ui.plugins.errors import PluginDisabledError
 from velox_ui.plugins.spec import (
@@ -84,16 +84,19 @@ class PluginRegistry:
     behaviour ``ProviderRegistry.register`` has.
     """
 
-    __slots__ = ("_instances", "_state")
+    __slots__ = ("_instances", "_state", "_tool_plugins")
 
     def __init__(self, state: AppState) -> None:
         """Bind the registry to the application state it reads configuration from."""
         self._state = state
         self._instances: dict[PluginKind, Plugin | None] = {}
+        self._tool_plugins: list[ToolPlugin] | None = None
 
     def invalidate(self, kind: PluginKind) -> None:
         """Drop a cached instance after its configuration changed."""
         self._instances.pop(kind, None)
+        if kind == "tools":
+            self._tool_plugins = None
 
     def info(self, kind: PluginKind, *, enabled: bool, configured: bool) -> PluginInfo:
         """Describe one kind's discovered entry point for ``GET /api/plugins``."""
@@ -102,7 +105,10 @@ class PluginRegistry:
         description = {
             "images": "Image generation over an OpenAI-compatible endpoint.",
             "voice": "Speech transcription and synthesis over an OpenAI-compatible endpoint.",
-            "tools": "Builtin tools a model can call mid-turn (web search and browsing).",
+            "tools": (
+                "Builtin tools a model can call mid-turn: the date and time, plus "
+                "web search and browsing once a SearXNG address is set below."
+            ),
         }[kind]
         return PluginInfo(
             name=name,
@@ -124,34 +130,18 @@ class PluginRegistry:
 
         Reads stored configuration on every call when nothing is cached yet; once
         loaded, the instance is reused until :meth:`invalidate` is called.
+
+        For ``"tools"`` this returns the *first* registered plugin only; that group
+        is a set rather than a singleton, so callers that want every tool should
+        use :meth:`tool_plugins`.
         """
         if kind in self._instances:
             return self._instances[kind]
 
-        from velox_ui.db.repositories.plugin_config import PluginConfigRepository
-
-        async with self._state.db.session() as session:
-            repository = PluginConfigRepository(session)
-            stored = await repository.get(kind)
-            if stored is None or not stored.get("enabled"):
-                self._instances[kind] = None
-                return None
-            config = config_from_dict(stored)
-            api_key: str | None = None
-            auth_ref = stored.get("auth_ref")
-            if auth_ref:
-                secret = await repository.get_secret(auth_ref)
-                if secret is not None:
-                    api_key = self._state.secrets.decrypt(
-                        secret.nonce, secret.ciphertext, ref=auth_ref
-                    )
-            config = PluginConfig(
-                enabled=config.enabled,
-                base_url=config.base_url,
-                model=config.model,
-                extra=config.extra,
-                api_key=api_key,
-            )
+        config = await self._config_for(kind)
+        if config is None:
+            self._instances[kind] = None
+            return None
 
         entry_points = discover(kind)
         if not entry_points:
@@ -162,13 +152,71 @@ class PluginRegistry:
         self._instances[kind] = plugin
         return plugin
 
+    async def tool_plugins(self) -> list[ToolPlugin]:
+        """Every enabled plugin in the ``velox_ui.tools`` group.
+
+        Unlike ``images``/``voice`` — one configured backend each — the tools group
+        is genuinely plural: the date/time plugin answers from the host and needs
+        no configuration, while the websearch plugin needs a SearXNG address, and
+        both should be able to contribute tools to the same turn. A plugin that
+        lacks the configuration it needs reports no tools rather than failing, so
+        enabling the group with nothing configured still gets you the ones that
+        need nothing.
+        """
+        if self._tool_plugins is not None:
+            return self._tool_plugins
+
+        config = await self._config_for("tools")
+        if config is None:
+            self._tool_plugins = []
+            return self._tool_plugins
+
+        plugins: list[ToolPlugin] = []
+        for entry_point in discover("tools"):
+            try:
+                plugins.append(
+                    cast(ToolPlugin, load(entry_point, config, secrets=self._state.secrets))
+                )
+            except Exception:
+                # One broken third-party plugin must not take the rest of the
+                # group — and the turn that wanted them — down with it.
+                _log.exception("tools plugin %r failed to load", entry_point.name)
+        self._tool_plugins = plugins
+        return plugins
+
+    async def _config_for(self, kind: PluginKind) -> PluginConfig | None:
+        """Load and decrypt a kind's stored config, or ``None`` when it is disabled."""
+        from velox_ui.db.repositories.plugin_config import PluginConfigRepository
+
+        async with self._state.db.session() as session:
+            repository = PluginConfigRepository(session)
+            stored = await repository.get(kind)
+            if stored is None or not stored.get("enabled"):
+                return None
+            config = config_from_dict(stored)
+            api_key: str | None = None
+            auth_ref = stored.get("auth_ref")
+            if auth_ref:
+                secret = await repository.get_secret(auth_ref)
+                if secret is not None:
+                    api_key = self._state.secrets.decrypt(
+                        secret.nonce, secret.ciphertext, ref=auth_ref
+                    )
+            return PluginConfig(
+                enabled=config.enabled,
+                base_url=config.base_url,
+                model=config.model,
+                extra=config.extra,
+                api_key=api_key,
+            )
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> str:
-        """Run a builtin tool by name, on the enabled ``"tools"`` plugin.
+        """Run a builtin tool by name, on whichever tools plugin provides it.
 
         Raises:
-            PluginDisabledError: If no ``"tools"`` plugin is enabled and configured.
+            PluginDisabledError: If no enabled plugin offers a tool by that name.
         """
-        plugin = await self.get("tools")
-        if plugin is None:
-            raise PluginDisabledError("No tools plugin is enabled.")
-        return await plugin.call(name, arguments)
+        for plugin in await self.tool_plugins():
+            if any(tool.name == name for tool in plugin.tools()):
+                return await plugin.call(name, arguments)
+        raise PluginDisabledError(f"No enabled plugin provides the tool {name!r}.")

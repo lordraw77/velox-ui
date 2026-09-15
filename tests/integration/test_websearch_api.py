@@ -64,5 +64,43 @@ def test_get_tools_lists_builtin_tools_once_enabled(
 
     after = client.get("/api/tools", headers=headers)
     names = {tool["name"] for tool in after.json()}
-    assert names == {"web_search", "web_browse"}
+    assert names == {"current_datetime", "web_search", "web_browse"}
     assert all(tool["server_id"] == "builtin" for tool in after.json())
+
+
+def test_datetime_tool_is_offered_without_a_search_backend(
+    client: TestClient, registered: dict
+) -> None:
+    """The tools group is plural: enabling it with no base_url still gives the
+    tools that need no configuration, and only those."""
+    headers = _headers(registered)
+    enabled = client.put("/api/plugins/tools", headers=headers, json={"enabled": True})
+    assert enabled.status_code == 200, enabled.text
+
+    listed = client.get("/api/tools", headers=headers)
+    names = {tool["name"] for tool in listed.json()}
+    assert "current_datetime" in names
+    # No SearXNG address, so the websearch plugin offers nothing rather than
+    # handing the model tools that could only fail.
+    assert "web_search" not in names
+    assert "web_browse" not in names
+
+    # And the search endpoint still reports itself unconfigured.
+    assert (
+        client.post("/api/websearch", headers=headers, json={"query": "x"}).status_code == 501
+    )
+
+
+def test_both_plugins_contribute_once_search_is_configured(
+    client: TestClient, registered: dict, searxng_server: FakeServer
+) -> None:
+    headers = _headers(registered)
+    client.put(
+        "/api/plugins/tools",
+        headers=headers,
+        json={"enabled": True, "base_url": searxng_server.base_url},
+    )
+
+    listed = client.get("/api/tools", headers=headers)
+    names = {tool["name"] for tool in listed.json()}
+    assert {"current_datetime", "web_search", "web_browse"} <= names

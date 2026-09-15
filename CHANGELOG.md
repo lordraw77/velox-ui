@@ -8,6 +8,12 @@ aspirational.
 
 ### Added
 
+- A builtin `current_datetime` tool, so a model can check the actual date and
+  time instead of answering from its training cutoff. It needs no
+  configuration, which made the `velox_ui.tools` entry-point group properly
+  plural: every registered plugin now contributes whatever tools its config
+  supports, so enabling the group with no SearXNG address still gives you the
+  date and time, and the websearch plugin offers nothing until it has one.
 - Web search and browsing as model-invokable tools: a builtin `"tools"`
   plugin (ADR-0014's dormant `velox_ui.tools` entry-point group, first used
   here) over a self-hosted SearXNG instance, offering `web_search` and

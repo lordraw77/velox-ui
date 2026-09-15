@@ -139,7 +139,15 @@ class SearxngToolPlugin:
         self._config = config
 
     def tools(self) -> list[ToolDefinition]:
-        """Describe ``web_search`` and ``web_browse``."""
+        """Describe ``web_search`` and ``web_browse``, when a backend is configured.
+
+        With no ``base_url`` there is nothing to search, so this offers nothing
+        rather than handing the model tools that can only fail. That is what lets
+        the tools plugin kind be enabled for its configuration-free tools (the
+        date/time one) without also promising web access.
+        """
+        if not self._config.base_url:
+            return []
         return [
             ToolDefinition(
                 name="web_search",

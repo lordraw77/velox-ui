@@ -102,7 +102,10 @@ def test_web_tool_call_runs_without_approval_and_without_mcp(
     assert names[-1] == "done"
 
     tool_call = next(payload for name, payload in events if name == "tool_call")
-    assert tool_call["name"] == "web_search"
+    # The fake backend calls whichever tool it was offered first; any builtin one
+    # proves the point here, which is that it dispatched with no approval gate
+    # and without going near the MCP manager.
+    assert tool_call["name"] in {"current_datetime", "web_search", "web_browse"}
     assert tool_call["approval"] == "auto"
 
     tool_result = next(payload for name, payload in events if name == "tool_result")

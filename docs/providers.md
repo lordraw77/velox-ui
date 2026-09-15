@@ -67,9 +67,10 @@ controls from it instead of hardcoding which backends support what.
 
 ## Optional plugins
 
-Image generation, voice (STT/TTS) and web tools are separate from chat
+Image generation, voice (STT/TTS) and builtin tools are separate from chat
 providers — they are entry-point plugins (ADR-0014), disabled by default,
 configured under **Plugins**. Images and voice are OpenAI-compatible HTTP
-clients (ADR-0021); web search and browsing (`web_search`, `web_browse`, a
-tool a chat model can call mid-turn) run over a self-hosted SearXNG instance.
+clients (ADR-0021). The `tools` group holds the tools a chat model can call
+mid-turn: `current_datetime` needs nothing configured, while `web_search` and
+`web_browse` run over a self-hosted SearXNG instance.
 See `docs/configuration.md`.

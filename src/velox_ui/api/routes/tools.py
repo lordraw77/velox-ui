@@ -65,15 +65,14 @@ async def list_tools(principal: CurrentPrincipal, state: State) -> list[ToolResp
             for tool in (server.tool_cache or [])
         ]
 
-    tool_plugin = await state.plugins.get("tools")
-    if tool_plugin is not None:
+    for tool_plugin in await state.plugins.tool_plugins():
         tools.extend(
             ToolResponse(
                 name=tool.name,
                 description=tool.description,
                 input_schema=tool.parameters,
                 server_id="builtin",
-                server_name="Web tools",
+                server_name="Builtin tools",
             )
             for tool in tool_plugin.tools()
         )

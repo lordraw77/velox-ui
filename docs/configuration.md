@@ -73,7 +73,7 @@ Per-preset environment variables: `VELOX_PROVIDER_<PRESET>_HOSTS` and
 `VELOX_PROVIDER_<PRESET>_API_KEY`, e.g. `VELOX_PROVIDER_VLLM_HOSTS`,
 `VELOX_PROVIDER_ANTHROPIC_API_KEY`.
 
-## Plugins (images, voice, web tools)
+## Plugins (images, voice, tools)
 
 Not part of `velox.toml` — these are runtime singletons (ADR-0014), disabled
 by default, configured through the interface's **Plugins** page or directly:
@@ -89,13 +89,19 @@ for `/v1/images/generations`, `/v1/audio/transcriptions` and
 `/v1/audio/speech` (ADR-0021); neither ships a bundled model. The API key,
 if any, is encrypted at rest the same way a provider's is.
 
-`tools` points at a self-hosted SearXNG instance and, once enabled, offers a
-chat model two tools it can call mid-turn: `web_search` and `web_browse` (no
-API key needed, no approval gate — they run immediately when called). A
-custom model surfaces them by including `"tools"` in its `plugins` list
-(the "Web search & browsing" checkbox in **Custom models**); the client
-resolves that into `web_tools: true` on the completion request, the same
-pattern `tool_server_ids` already uses for MCP servers.
+`tools` is a group rather than a single backend: every plugin registered under
+the `velox_ui.tools` entry point contributes whatever tools its configuration
+supports. `current_datetime` (the host's date, weekday, timezone and UTC) needs
+no configuration at all, so enabling `tools` with an empty `base_url` gives you
+that on its own. Setting `base_url` to a self-hosted SearXNG instance adds
+`web_search` and `web_browse` on top. None of them has an approval gate — they
+run immediately when the model calls them.
+
+Tools are offered to every chat once the group is enabled. A custom model can
+also request them explicitly by including `"tools"` in its `plugins` list (the
+"Builtin tools" checkbox in **Custom models**), which the client resolves into
+`web_tools: true` on the completion request, the same pattern `tool_server_ids`
+already uses for MCP servers.
 
 ## Secrets
 

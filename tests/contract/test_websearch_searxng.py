@@ -45,10 +45,17 @@ def _allow_first_hop_only(allowed_base_url: str) -> Callable[[str], Awaitable[No
     return _check
 
 
-async def test_tools_declares_search_and_browse() -> None:
-    plugin = SearxngToolPlugin(PluginConfig(enabled=True), secrets=object())  # type: ignore[arg-type]
-    names = {tool.name for tool in plugin.tools()}
+async def test_tools_declares_search_and_browse(searxng_server: FakeServer) -> None:
+    names = {tool.name for tool in _plugin(searxng_server).tools()}
     assert names == {"web_search", "web_browse"}
+
+
+async def test_offers_nothing_without_a_configured_backend() -> None:
+    """With no base_url there is nothing to search, so the model is handed no
+    tool rather than one that could only fail — this is what lets the tools
+    plugin kind be enabled just for its configuration-free tools."""
+    plugin = SearxngToolPlugin(PluginConfig(enabled=True), secrets=object())  # type: ignore[arg-type]
+    assert plugin.tools() == []
 
 
 async def test_search_returns_formatted_results(searxng_server: FakeServer) -> None:

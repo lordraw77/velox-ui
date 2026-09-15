@@ -123,11 +123,13 @@
           >
             <div class="field">
               <label for="plugin-{kind}-url">{app.t("plugins.baseUrl")}</label>
+              <!-- Optional for tools: leaving it empty still enables the tools that
+                   need no backend of their own, such as the date and time. -->
               <input
                 id="plugin-{kind}-url"
                 bind:value={baseUrl[kind]}
                 placeholder={kind === "tools" ? "http://localhost:8080" : "http://localhost:9000"}
-                required
+                required={kind !== "tools"}
               />
             </div>
             {#if kind !== "tools"}

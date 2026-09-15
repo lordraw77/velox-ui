@@ -74,7 +74,11 @@ builtin-images = "velox_ui.plugins.builtin.images:OpenAICompatImagePlugin"
 [project.entry-points."velox_ui.voice"]
 builtin-voice = "velox_ui.plugins.builtin.voice:OpenAICompatVoicePlugin"
 
+# The tools group is plural: every registered plugin contributes its tools to a
+# turn. The date/time one needs no configuration at all; websearch offers nothing
+# until a SearXNG address is set.
 [project.entry-points."velox_ui.tools"]
+builtin-datetime = "velox_ui.plugins.builtin.datetime_tools:DateTimeToolPlugin"
 builtin-websearch = "velox_ui.plugins.builtin.websearch:SearxngToolPlugin"
 
 [project.urls]

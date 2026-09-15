@@ -164,6 +164,20 @@ async def validate_plugin(
     """
     del principal
     kind = _valid_kind(name)
+
+    # The tools group holds several plugins rather than one backend, so its
+    # verdict is the aggregate: every enabled plugin reports, and the group is
+    # healthy only if all of them are.
+    if kind == "tools":
+        plugins = await state.plugins.tool_plugins()
+        if not plugins:
+            return {"ok": False, "detail": "Not enabled."}
+        results = [await plugin.validate() for plugin in plugins]
+        return {
+            "ok": all(result.ok for result in results),
+            "detail": " ".join(result.detail for result in results),
+        }
+
     plugin = await state.plugins.get(kind)
     if plugin is None:
         return {"ok": False, "detail": "Not enabled or not configured."}

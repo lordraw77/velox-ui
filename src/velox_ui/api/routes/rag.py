@@ -30,6 +30,7 @@ from velox_ui.db.repositories.rag import (
     to_document_summary,
 )
 from velox_ui.errors import ForbiddenError, NotFoundError
+from velox_ui.plugins.errors import PluginDisabledError
 from velox_ui.rag.chunking import ChunkingConfig
 from velox_ui.rag.embedders.registry import dim_for_ref
 from velox_ui.security.uploads import read_upload, store_upload, validate_upload
@@ -537,8 +538,12 @@ async def websearch(
     knowledge-base document is a separate feature this does not touch.
     """
     del principal
-    tool_plugin = await state.plugins.get("tools")
-    if tool_plugin is None:
+    # Asks the registry for the tool by name rather than for a plugin: the tools
+    # group holds several, and only the ones with a search backend configured
+    # offer `web_search` at all.
+    try:
+        results = await state.plugins.call_tool("web_search", {"query": payload.query})
+    except PluginDisabledError:
         return json_response(
             {
                 "error": {
@@ -549,5 +554,4 @@ async def websearch(
             },
             status_code=501,
         )
-    results = await tool_plugin.call("web_search", {"query": payload.query})
     return json_response({"query": payload.query, "results": results})
