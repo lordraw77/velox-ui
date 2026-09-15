@@ -56,6 +56,6 @@ async def test_call_tool_reports_error_without_raising() -> None:
 
 async def test_initialize_fails_fast_on_a_bad_command() -> None:
     client = StdioMcpClient(command="__velox_definitely_not_a_real_binary__")
-    with pytest.raises((McpError, OSError)):
+    with pytest.raises(McpError, match="__velox_definitely_not_a_real_binary__"):
         await client.initialize()
     await client.close()

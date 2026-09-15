@@ -64,17 +64,29 @@ class StdioMcpClient:
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
 
     async def initialize(self) -> None:
-        """Spawn the subprocess and perform the MCP handshake."""
+        """Spawn the subprocess and perform the MCP handshake.
+
+        Raises:
+            McpError: If the command cannot be found or started (a wrong path, a
+                missing interpreter — e.g. Node not being present in the runtime
+                image for an ``npx``-based server — or a permissions error), or if
+                the handshake does not complete in time.
+        """
         import os
 
-        self._process = await asyncio.create_subprocess_exec(
-            self._command,
-            *self._args,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, **self._env},
-        )
+        try:
+            self._process = await asyncio.create_subprocess_exec(
+                self._command,
+                *self._args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, **self._env},
+            )
+        except OSError as exc:
+            raise McpError(
+                f"Could not start MCP server command {self._command!r}: {exc}"
+            ) from exc
         self._read_task = asyncio.create_task(self._read_loop())
         self._stderr_task = asyncio.create_task(self._drain_stderr())
 
