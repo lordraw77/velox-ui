@@ -30,6 +30,7 @@ import type {
   InstalledModel,
   JobSnapshot,
   McpApproval,
+  McpImportResult,
   McpServer,
   McpTool,
   McpTransport,
@@ -598,6 +599,11 @@ export class ApiClient {
 
   mcpServerTools(id: string): Promise<McpTool[]> {
     return this.request<McpTool[]>(`/api/mcp/servers/${id}/tools`);
+  }
+
+  /** Import servers from a Claude Code `mcpServers` config (a pasted or file's raw text). */
+  importMcpServers(raw: string): Promise<McpImportResult> {
+    return this.#json("POST", "/api/mcp/servers/import", { raw });
   }
 
   availableTools(): Promise<AvailableTool[]> {

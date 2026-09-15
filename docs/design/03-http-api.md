@@ -190,6 +190,7 @@ from the custom model, then sent on `POST .../completions` as `tool_server_ids`.
 | GET/POST/PATCH/DELETE | `/api/mcp/servers…` | **phase 8**; `auth_token` on create/update is encrypted at rest (ADR-0013), never echoed back except as `auth_hint: "set"` |
 | POST | `/api/mcp/servers/{id}/connect` | **phase 8** connect + cache the tool list; a real handshake against the configured transport, not a stub |
 | GET | `/api/mcp/servers/{id}/tools` | **phase 8** the cached list, no reconnect |
+| POST | `/api/mcp/servers/import` | translates a Claude Code `mcpServers` config into one or more servers (`services/mcp_import.py`); credentials in `env`/`headers` land as plain config, not encrypted |
 | POST | `/api/tools/approve` | **phase 8** approve or reject a pending tool call raised by a stream's `tool_call` event; `{call_id, approved, remember}` |
 | GET | `/api/tools` | **phase 8** every tool the caller's enabled MCP servers currently cache; MCP-only — no built-in tool ships this phase (ADR-0020) |
 

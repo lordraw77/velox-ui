@@ -16,8 +16,9 @@ from pydantic import BaseModel, Field, field_validator
 from velox_ui.api.deps import CurrentPrincipal, State
 from velox_ui.db.models import McpServer
 from velox_ui.db.repositories.mcp_servers import McpServerRepository
-from velox_ui.errors import ForbiddenError, NotFoundError
+from velox_ui.errors import ForbiddenError, NotFoundError, ValidationError
 from velox_ui.security.crypto import mask_secret
+from velox_ui.services.mcp_import import McpImportError, parse_claude_mcp_config
 
 router = APIRouter(prefix="/api/mcp/servers", tags=["mcp"])
 
@@ -155,6 +156,65 @@ async def create_server(
             )
             server.auth_ref = server.id
         return _to_response(server)
+
+
+class ImportMcpServersRequest(BaseModel):
+    """A pasted or uploaded Claude Code ``mcpServers`` config."""
+
+    raw: str = Field(min_length=1)
+
+
+class ImportMcpServersResponse(BaseModel):
+    """The servers created, and any entries whose ``cwd`` could not be carried over."""
+
+    servers: list[McpServerResponse]
+    dropped_cwd: list[str]
+
+
+@router.post(
+    "/import",
+    response_model=ImportMcpServersResponse,
+    status_code=201,
+    summary="Import servers from a Claude Code mcpServers config",
+)
+async def import_servers(
+    payload: ImportMcpServersRequest, principal: CurrentPrincipal, state: State
+) -> ImportMcpServersResponse:
+    """Translate and create servers from Claude Code's own config shape.
+
+    Accepts a full ``{"mcpServers": {...}}`` file, a bare name-keyed map, or a
+    single server object (see ``services/mcp_import.py``). Credentials found in
+    ``env``/``headers`` are carried over as plain config, exactly as the source had
+    them — encrypting one requires knowing which key is a secret, so that step is
+    left to editing the server afterward.
+
+    Raises:
+        ValidationError: If the payload isn't a config shape this importer
+            recognises.
+    """
+    try:
+        imported = parse_claude_mcp_config(payload.raw)
+    except McpImportError as exc:
+        raise ValidationError(str(exc)) from exc
+
+    created: list[McpServerResponse] = []
+    dropped_cwd: list[str] = []
+    async with state.db.write() as session:
+        repository = McpServerRepository(session)
+        for server in imported:
+            row = await repository.create(
+                owner_id=principal.user_id,
+                name=server.name,
+                transport=server.transport,
+                config=server.config,
+                approval="always",
+                enabled=True,
+            )
+            await session.flush()
+            created.append(_to_response(row))
+            if server.dropped_cwd:
+                dropped_cwd.append(server.name)
+    return ImportMcpServersResponse(servers=created, dropped_cwd=dropped_cwd)
 
 
 @router.get("/{server_id}", response_model=McpServerResponse, summary="Get an MCP server")

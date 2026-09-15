@@ -38,7 +38,7 @@ class McpServerRepository:
     async def create(
         self,
         *,
-        owner_id: str,
+        owner_id: str | None,
         name: str,
         transport: str,
         config: dict[str, Any],

@@ -16,6 +16,12 @@ aspirational.
   /api/audio/speech`. A settings page, a mic button, a speaker button and an
   image-generation panel in the interface, all hidden until their plugin is
   enabled. `CHANGELOG.md`, `CONTRIBUTING.md` and the remaining reference docs.
+- `velox import mcp-config` and `POST /api/mcp/servers/import` (plus an
+  "Import from JSON" box in the MCP settings panel) translate a Claude Code
+  `mcpServers` config into velox-ui's own MCP server shape
+  (`services/mcp_import.py`). The manual "add a server" form also gained a
+  credential env-var-name field (`config.auth_env`), previously only settable
+  through the API.
 - Phase 9 — Open WebUI import. `velox import openwebui` reads Open WebUI's own
   chat export (not its database file), reconstructing the branching message
   tree, tags and, given a folder export, folder names. Idempotent by the

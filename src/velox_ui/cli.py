@@ -25,6 +25,7 @@ examples:
   velox bench                          run the performance suite
   velox import openwebui export.json --user alice@example.com
                                         import chats from an Open WebUI export
+  velox import mcp-config .mcp.json    import MCP servers from a Claude Code config
 """
 
 
@@ -72,7 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--case", action="append", help="Run only the named case. Repeatable.")
     bench.add_argument("--json", metavar="PATH", help="Write results as JSON to this path.")
 
-    import_cmd = subcommands.add_parser("import", help="Import chats from another interface.")
+    import_cmd = subcommands.add_parser(
+        "import", help="Import chats or MCP servers from another interface."
+    )
     import_actions = import_cmd.add_subparsers(dest="import_command", metavar="<source>")
     openwebui = import_actions.add_parser("openwebui", help="Import an Open WebUI chat export.")
     openwebui.add_argument("path", help="Path to the export JSON file.")
@@ -83,6 +86,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--folders",
         metavar="PATH",
         help="Open WebUI folders export JSON, to preserve folder names.",
+    )
+    mcp_config = import_actions.add_parser(
+        "mcp-config", help="Import servers from a Claude Code mcpServers config."
+    )
+    mcp_config.add_argument("path", help="Path to the mcpServers JSON file.")
+    mcp_config.add_argument(
+        "--owner",
+        metavar="EMAIL",
+        help="Account the servers belong to. Omit for instance-wide (ownerless) servers.",
     )
 
     return parser
@@ -334,7 +346,9 @@ def _bench(args: argparse.Namespace) -> int:
 
 
 def _import(args: argparse.Namespace) -> int:
-    """Import chats from another interface."""
+    """Import chats or MCP servers from another interface."""
+    if args.import_command == "mcp-config":
+        return _import_mcp_config(args)
     if args.import_command != "openwebui":
         build_parser().parse_args(["import", "--help"])
         return 2
@@ -392,6 +406,62 @@ def _import(args: argparse.Namespace) -> int:
         print(f"imported {report.imported} chat(s)")
         for skip in report.skipped:
             print(f"  skipped {skip.source_id} ({skip.title!r}): {skip.reason}")
+        return 0
+
+    return asyncio.run(_run())
+
+
+def _import_mcp_config(args: argparse.Namespace) -> int:
+    """Import MCP servers from a Claude Code ``mcpServers`` config."""
+    import asyncio
+
+    from velox_ui.db.engine import Database
+    from velox_ui.db.repositories.mcp_servers import McpServerRepository
+    from velox_ui.db.repositories.users import UserRepository
+    from velox_ui.services.mcp_import import McpImportError, parse_claude_mcp_config
+    from velox_ui.settings import Settings
+
+    settings = _load(args)
+    assert isinstance(settings, Settings)  # noqa: S101 - narrowing for the type checker
+
+    try:
+        with open(args.path, "rb") as handle:
+            raw = handle.read()
+        imported = parse_claude_mcp_config(raw)
+    except (OSError, McpImportError) as exc:
+        print(f"velox: {exc}", file=sys.stderr)
+        return 2
+
+    async def _run() -> int:
+        database = Database(settings.database_url)
+        try:
+            owner_id: str | None = None
+            if args.owner:
+                async with database.session() as session:
+                    user = await UserRepository(session).by_email(args.owner)
+                if user is None:
+                    print(f"velox: no account with email {args.owner!r}", file=sys.stderr)
+                    return 1
+                owner_id = user.id
+
+            async with database.write() as session:
+                repository = McpServerRepository(session)
+                for server in imported:
+                    await repository.create(
+                        owner_id=owner_id,
+                        name=server.name,
+                        transport=server.transport,
+                        config=server.config,
+                        approval="always",
+                        enabled=True,
+                    )
+        finally:
+            await database.dispose()
+
+        print(f"imported {len(imported)} MCP server(s)")
+        for server in imported:
+            if server.dropped_cwd:
+                print(f"  {server.name}: 'cwd' has no equivalent field and was dropped")
         return 0
 
     return asyncio.run(_run())

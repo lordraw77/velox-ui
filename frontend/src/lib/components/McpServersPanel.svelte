@@ -20,10 +20,16 @@
   let newArgs = $state("");
   let newUrl = $state("");
   let newAuthToken = $state("");
+  let newAuthEnv = $state("");
   let newApproval = $state<McpApproval>("always");
 
   let connecting = $state<string | null>(null);
   let toolsByServer = $state<Record<string, McpTool[]>>({});
+
+  let importing = $state(false);
+  let importRaw = $state("");
+  let importBusy = $state(false);
+  let importDroppedCwd = $state<string[]>([]);
 
   onMount(load);
 
@@ -44,7 +50,9 @@
         .split(/\s+/)
         .map((part) => part.trim())
         .filter(Boolean);
-      return { command: newCommand.trim(), args };
+      const config: Record<string, unknown> = { command: newCommand.trim(), args };
+      if (newAuthEnv.trim()) config.auth_env = newAuthEnv.trim();
+      return config;
     }
     return { url: newUrl.trim() };
   }
@@ -65,10 +73,28 @@
       newArgs = "";
       newUrl = "";
       newAuthToken = "";
+      newAuthEnv = "";
       creating = false;
       await load();
     } catch (error) {
       app.report(error);
+    }
+  }
+
+  async function importServers(): Promise<void> {
+    const raw = importRaw.trim();
+    if (!raw || importBusy) return;
+    importBusy = true;
+    try {
+      const result = await api.importMcpServers(raw);
+      importRaw = "";
+      importing = false;
+      importDroppedCwd = result.dropped_cwd;
+      await load();
+    } catch (error) {
+      app.report(error);
+    } finally {
+      importBusy = false;
     }
   }
 
@@ -227,6 +253,13 @@
               <input id="mcp-token" type="password" bind:value={newAuthToken} autocomplete="off" />
               <p class="hint">{app.t("mcp.authTokenHint")}</p>
             </div>
+            {#if newTransport === "stdio"}
+              <div class="field">
+                <label for="mcp-auth-env">{app.t("mcp.authEnv")}</label>
+                <input id="mcp-auth-env" bind:value={newAuthEnv} placeholder="MCP_AUTH_TOKEN" />
+                <p class="hint">{app.t("mcp.authEnvHint")}</p>
+              </div>
+            {/if}
             <div class="field">
               <label for="mcp-approval">{app.t("mcp.approval")}</label>
               <select id="mcp-approval" bind:value={newApproval}>
@@ -244,9 +277,51 @@
           </form>
         </section>
       {:else}
-        <button class="btn btn-primary" onclick={() => (creating = true)} type="button">
-          {app.t("mcp.add")}
-        </button>
+        <div class="row-actions">
+          <button class="btn btn-primary" onclick={() => (creating = true)} type="button">
+            {app.t("mcp.add")}
+          </button>
+          <button class="btn btn-ghost" onclick={() => (importing = true)} type="button">
+            {app.t("mcp.import")}
+          </button>
+        </div>
+      {/if}
+
+      {#if importDroppedCwd.length > 0}
+        <p class="hint">
+          {app.t("mcp.importDroppedCwd", { names: importDroppedCwd.join(", ") })}
+        </p>
+      {/if}
+
+      {#if importing}
+        <section class="card">
+          <form
+            class="stack"
+            onsubmit={(event) => {
+              event.preventDefault();
+              void importServers();
+            }}
+          >
+            <div class="field">
+              <label for="mcp-import-raw">{app.t("mcp.importLabel")}</label>
+              <textarea
+                id="mcp-import-raw"
+                bind:value={importRaw}
+                rows="8"
+                placeholder={"{\n  \"mcpServers\": {\n    \"discogs\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"discogs-mcp-server\"],\n      \"env\": {\"DISCOGS_PERSONAL_ACCESS_TOKEN\": \"...\"}\n    }\n  }\n}"}
+              ></textarea>
+              <p class="hint">{app.t("mcp.importHint")}</p>
+            </div>
+            <div class="row-actions">
+              <button class="btn btn-ghost" onclick={() => (importing = false)} type="button">
+                {app.t("mcp.cancel")}
+              </button>
+              <button class="btn btn-primary" disabled={importBusy} type="submit">
+                {importBusy ? app.t("mcp.importing") : app.t("mcp.importSubmit")}
+              </button>
+            </div>
+          </form>
+        </section>
       {/if}
     {/if}
   </div>

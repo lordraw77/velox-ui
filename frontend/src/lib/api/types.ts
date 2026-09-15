@@ -413,6 +413,13 @@ export interface McpServer {
   created_at: number;
 }
 
+/** Result of importing a Claude Code `mcpServers` config. */
+export interface McpImportResult {
+  servers: McpServer[];
+  /** Names of imported servers whose `cwd` had no equivalent field and was dropped. */
+  dropped_cwd: string[];
+}
+
 export interface McpTool {
   name: string;
   description: string;
