@@ -6,6 +6,13 @@ aspirational.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - 2026-09-16
+
+The first release: all ten delivery phases of docs/design/00-overview.md, from
+the skeleton to the optional plugins.
+
 ### Added
 
 - A builtin `current_datetime` tool, so a model can check the actual date and
@@ -28,20 +35,7 @@ aspirational.
   now reflect this plugin when enabled. Web tools are offered on every chat
   once the plugin is enabled (the same global-toggle shape images/voice use),
   not only from a custom model that opted in.
-
-### Fixed
-
-- The Ollama adapter never sent tools to the model. It reported
-  `ToolSupport.NATIVE` from `/api/show`, so the service layer believed tools
-  were offered, but `_encode_request` never put `tools` in the `/api/chat`
-  body — a tool-capable model was silently given none and answered "I cannot
-  browse the web". Tool results and assistant tool-call turns were not
-  encoded either. Ollama's response shape also differs from OpenAI's (a call
-  arrives whole rather than fragmented, arguments are an object not a string,
-  no call id, and `done_reason: "stop"` even for a tool-only turn), all now
-  handled. Missed until now because every tool test drove the loop through
-  the `openai_compat` adapter; the native Ollama path now has contract tests
-  and its own end-to-end tool-loop test.
+- Responsive support for phones and tablets.
 - Phase 10 — optional plugins, packaging, documentation. Image generation and
   voice (STT/TTS) ship as builtin entry-point plugins (ADR-0014) that are thin
   OpenAI-compatible HTTP clients (ADR-0021), disabled by default and never
@@ -89,3 +83,17 @@ aspirational.
   backends and a real Ollama host.
 - Phase 1 — skeleton, configuration, database, migrations, authentication,
   the benchmark harness.
+
+### Fixed
+
+- The Ollama adapter never sent tools to the model. It reported
+  `ToolSupport.NATIVE` from `/api/show`, so the service layer believed tools
+  were offered, but `_encode_request` never put `tools` in the `/api/chat`
+  body — a tool-capable model was silently given none and answered "I cannot
+  browse the web". Tool results and assistant tool-call turns were not
+  encoded either. Ollama's response shape also differs from OpenAI's (a call
+  arrives whole rather than fragmented, arguments are an object not a string,
+  no call id, and `done_reason: "stop"` even for a tool-only turn), all now
+  handled. Missed until now because every tool test drove the loop through
+  the `openai_compat` adapter; the native Ollama path now has contract tests
+  and its own end-to-end tool-loop test.
