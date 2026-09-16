@@ -141,8 +141,11 @@ plugins = []
 warn_unreachable = true
 disallow_any_explicit = false
 
+# Optional dependencies that ship no stubs. Installing them to type-check a lazy
+# `from fastembed import ...` inside one function would put onnxruntime in the lint
+# job for nothing: `rag/embedders/fastembed_onnx.py` holds the model as `Any` anyway.
 [[tool.mypy.overrides]]
-module = ["granian.*", "sqlite_vec.*"]
+module = ["granian.*", "sqlite_vec.*", "fastembed.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

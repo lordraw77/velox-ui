@@ -203,7 +203,10 @@ jobs:
         run: |
           uv venv --python 3.12
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
-      - run: uv pip install -e '.[dev]'
+      # The uvicorn extra is not optional here: `open_chat_5k` and `ttft_overhead`
+      # drive the app through uvicorn and silently report themselves as skipped
+      # without it, which makes the gate pass by not running.
+      - run: uv pip install -e '.[dev,uvicorn]'
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
