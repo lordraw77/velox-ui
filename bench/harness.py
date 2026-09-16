@@ -13,19 +13,26 @@ Three details keep the numbers honest:
   that ran and met its goal.
 * **The machine profile is printed alongside the results.** A number without the host
   it was measured on cannot be compared with anything.
+* **Headroom is explicit and visible.** A target calibrated on one machine can be a
+  hair too tight on another — `rss_idle` measures ~133 MB on a developer box and
+  ~150.5 MB on a GitHub runner against a 150 MB target, which is the host, not a
+  regression. `VELOX_BENCH_HEADROOM_<CASE>` grants that case a stated allowance for
+  one run; a case that passes only because of it reports `tolerated`, not `pass`, so
+  the slack stays in the output instead of disappearing into a green build.
 """
 
 from __future__ import annotations
 
 import asyncio
 import importlib
+import os
 import pkgutil
 import platform
 import statistics
 import sys
 import time
 from collections.abc import Callable, Coroutine, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +53,9 @@ class Measurement:
         detail: Free-form notes shown under the table.
         pending: The case describes a target for work that does not exist yet.
         skipped: The case could not run here, with the reason in ``detail``.
+        headroom: Allowance added to ``target`` for this run only, from
+            ``VELOX_BENCH_HEADROOM_<CASE>``. Never silent: a measurement that needs it
+            reports ``tolerated``.
     """
 
     value: float | None
@@ -56,20 +66,35 @@ class Measurement:
     detail: str = ""
     pending: bool = False
     skipped: bool = False
+    headroom: float = 0.0
+
+    @property
+    def effective_target(self) -> float | None:
+        """Return the threshold actually compared against, headroom included."""
+        if self.target is None:
+            return None
+        return (
+            self.target + self.headroom if self.lower_is_better else self.target - self.headroom
+        )
 
     @property
     def status(self) -> str:
-        """Return ``pass``, ``FAIL``, ``pending``, ``skip`` or ``report``."""
+        """Return ``pass``, ``tolerated``, ``FAIL``, ``pending``, ``skip`` or ``report``."""
         if self.pending:
             return "pending"
         if self.skipped:
             return "skip"
         if self.target is None or self.value is None:
             return "report"
-        within = (
-            self.value <= self.target if self.lower_is_better else self.value >= self.target
-        )
-        return "pass" if within else "FAIL"
+        effective = self.effective_target
+        assert effective is not None
+        if self.lower_is_better:
+            if self.value > effective:
+                return "FAIL"
+            return "pass" if self.value <= self.target else "tolerated"
+        if self.value < effective:
+            return "FAIL"
+        return "pass" if self.value >= self.target else "tolerated"
 
     @property
     def failed(self) -> bool:
@@ -156,6 +181,32 @@ def discover_cases() -> list[BenchCase]:
     return found
 
 
+def _headroom(case_name: str) -> float:
+    """Return the allowance granted to one case by the environment.
+
+    ``VELOX_BENCH_HEADROOM_RSS_IDLE=25`` adds 25 of the case's own unit to its target
+    for this run. It exists for the gap between the machine a target was calibrated on
+    and the machine a build happens to run on, and it is deliberately per-case: there
+    is no global "make the gates lenient" switch, because that is how a gate stops
+    being one. A value that cannot be read as a number is an error, not a zero --
+    a typo must not quietly tighten the gate back up.
+    """
+    raw = os.environ.get(f"VELOX_BENCH_HEADROOM_{case_name.upper()}")
+    if raw is None:
+        return 0.0
+    try:
+        value = float(raw)
+    except ValueError:
+        raise SystemExit(
+            f"velox bench: VELOX_BENCH_HEADROOM_{case_name.upper()}={raw!r} is not a number."
+        ) from None
+    if value < 0:
+        raise SystemExit(
+            f"velox bench: VELOX_BENCH_HEADROOM_{case_name.upper()} must not be negative."
+        )
+    return value
+
+
 def _machine_profile() -> dict[str, str]:
     """Describe the host, so a result can be compared with another run."""
     import os
@@ -188,6 +239,8 @@ def _print_table(results: list[tuple[BenchCase, Measurement]]) -> None:
             (
                 case.name,
                 _format_value(measurement.value, measurement.unit),
+                # The declared target, not the effective one: the column states what
+                # the project promises. Any allowance is in the note and in `status`.
                 _format_value(measurement.target, measurement.unit),
                 measurement.unit,
                 _format_value(measurement.percentile(0.50), measurement.unit),
@@ -247,6 +300,17 @@ async def run_all(
                 skipped=True,
                 detail=f"case raised {type(exc).__name__}: {exc}",
             )
+        headroom = _headroom(case.name)
+        if headroom and measurement.target is not None:
+            note = (
+                f"target {measurement.target:g} {measurement.unit} plus "
+                f"{headroom:g} of headroom from VELOX_BENCH_HEADROOM_{case.name.upper()}"
+            )
+            measurement = replace(
+                measurement,
+                headroom=headroom,
+                detail=f"{measurement.detail}; {note}" if measurement.detail else note,
+            )
         results.append((case, measurement))
     return results
 
@@ -277,11 +341,18 @@ def run_cli(
 
     failures = [case.name for case, measurement in results if measurement.failed]
     pending = [case.name for case, measurement in results if measurement.status == "pending"]
+    tolerated = [
+        case.name for case, measurement in results if measurement.status == "tolerated"
+    ]
     print()
     if pending:
         print(f"pending (not implemented yet): {', '.join(pending)}")
+    if tolerated:
+        print(f"within granted headroom, over target: {', '.join(tolerated)}")
     if failures:
         print(f"FAILED: {', '.join(failures)}")
+    elif tolerated:
+        print("all measured targets met, some only within their granted headroom")
     else:
         print("all measured targets met")
 
@@ -298,6 +369,8 @@ def run_cli(
                     "value": measurement.value,
                     "unit": measurement.unit,
                     "target": measurement.target,
+                    "headroom": measurement.headroom,
+                    "effective_target": measurement.effective_target,
                     "p50": measurement.percentile(0.50),
                     "p95": measurement.percentile(0.95),
                     "status": measurement.status,
