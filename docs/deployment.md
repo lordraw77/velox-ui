@@ -56,8 +56,9 @@ A tag push builds `linux/amd64` only. `linux/arm64` is available as a manual
 input and is built under QEMU, which is slow and occasionally trips on native
 wheels — it is opt-in rather than a promise the release path makes.
 
-The workflow needs two repository secrets: `DOCKERHUB_USERNAME` and
-`DOCKERHUB_TOKEN` (an access token with Read & Write, not the password).
+The workflow needs two repository secrets, `DOCKERHUB_USERNAME` and
+`DOCKERHUB_PASSWORD`; an access token with Read & Write is the right value for
+the second one, in preference to the account password.
 
 ### Persisted data
 
