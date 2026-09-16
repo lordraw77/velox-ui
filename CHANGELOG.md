@@ -6,7 +6,37 @@ aspirational.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `lordraw/velox-ui-mcp-gateway`, a companion image that runs a `stdio` MCP
+  server and republishes it as Streamable HTTP. The runtime image ships no
+  Node and no package manager (the frontend is compiled in a build stage, and
+  ADR-0015 holds the image under 250 MB), so an MCP server published on npm or
+  PyPI cannot be launched from inside it — configuring one as a `stdio` server
+  failed with `No such file or directory: 'npx'`. The gateway is the other
+  half of that decision: velox-ui reaches the server as an ordinary `http_sse`
+  server over the network. Source in `docker/mcp-gateway/`, compose examples
+  alongside it, and `docs/mcp-gateway.md` for the whole arrangement. The image
+  ships with no MCP server installed; servers are added in a derived build,
+  pinned.
+- A release workflow (`.github/workflows/publish.yml`) that pushes both
+  images to Docker Hub on a `v*` tag, or on demand for a one-off tag, and
+  pushes each repository's description from `docs/dockerhub-overview*.md` in
+  the same run. The 250 MB budget (ADR-0015) is checked against the loaded
+  image before the push, so a release cannot exceed it quietly. Until now CI
+  built and gated the image but nothing published it.
+- `docker-compose.mcp.yml` and `docker-compose.mcp-multi.yml`, deployment
+  variants running velox-ui with one and with two MCP servers behind gateway
+  sidecars. One `supergateway` process bridges exactly one server, so N
+  servers means N containers; their tools merge in velox-ui, which unions the
+  caller's enabled servers (ADR-0020).
+
+### Changed
+
+- The Ollama host in every compose file is now `${OLLAMA_HOSTS}`, read from
+  `.env` like the provider API keys, instead of an address baked into the
+  committed file. Unset, it resolves to an empty value, which leaves the
+  first-start autodiscovery in place rather than registering a dead host.
 
 ## [0.1.0] - 2026-09-16
 

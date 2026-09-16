@@ -21,7 +21,7 @@ services:
       # stored provider credentials readable across a rebuilt volume.
       # VELOX_SECRET_KEY: "change-me"
       VELOX_LOG_FORMAT: json
-      VELOX_PROVIDER_OLLAMA_HOSTS: http://192.168.0.140:11434
+      VELOX_PROVIDER_OLLAMA_HOSTS: ${OLLAMA_HOSTS}
       # Read from a .env file next to this one (docker compose loads it
       # automatically), so the key itself is never written here or committed.
       VELOX_PROVIDER_NVIDIA_API_KEY: ${NVIDIA_API_KEY}

@@ -128,6 +128,58 @@ jobs:
           done
           curl -sf http://127.0.0.1:8080/ready
 
+  mcp-gateway-image:
+    # The companion image is published separately, so it needs its own build here or a
+    # broken Dockerfile only surfaces when someone deploys it. No push: releases are
+    # manual, same as the main image.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/mcp-gateway/Dockerfile
+          tags: velox-ui-mcp-gateway:latest
+          load: true
+      - name: The three toolchains the image promises are present
+        run: |
+          docker run --rm --entrypoint sh velox-ui-mcp-gateway:latest -c \
+            'node --version && npm --version && uv --version && git --version'
+      - name: Bridge a real MCP server end to end
+        run: |
+          docker build -q -t gateway-smoke:latest - <<'DOCKERFILE'
+          FROM velox-ui-mcp-gateway:latest
+          USER root
+          RUN npm install -g --no-audit --no-fund @modelcontextprotocol/server-everything@2026.8.31
+          USER node
+          DOCKERFILE
+          docker run -d --name gateway-smoke -p 8000:8000 gateway-smoke:latest \
+            --stdio mcp-server-everything \
+            --outputTransport streamableHttp \
+            --stateful --sessionTimeout 600000 \
+            --port 8000
+          for _ in $(seq 1 60); do
+            sleep 0.5
+            curl -sf -o /dev/null http://127.0.0.1:8000/mcp -X POST \
+              -H 'Content-Type: application/json' \
+              -H 'Accept: application/json, text/event-stream' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+              && break
+          done
+          # A handshake that names the server, not just an HTTP 200: an empty stream
+          # from a child that died is also a 200.
+          curl -sS http://127.0.0.1:8000/mcp -X POST \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            | tee /tmp/handshake.txt
+          grep -q '"serverInfo"' /tmp/handshake.txt
+      - name: Gateway logs
+        if: failure()
+        run: docker logs gateway-smoke
+
   bench:
     needs: frontend
     runs-on: ubuntu-latest

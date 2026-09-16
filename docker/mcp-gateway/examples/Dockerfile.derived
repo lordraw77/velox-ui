@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+#
+# The normal way to use the published image: add the MCP servers you actually want.
+#
+#   docker build -f Dockerfile.derived -t my-mcp-gateway:latest .
+#
+# The base image ships no server, so this is not an optimisation -- it is how you get
+# one. Both build args are space-separated lists and either may be omitted.
+FROM lordraw/velox-ui-mcp-gateway:latest
+
+# Versions are pinned, and should stay pinned: an MCP server is a tool surface a model
+# calls, so a silent upgrade can rename a tool or change an argument under a
+# conversation that already learned the old shape.
+ARG NPM_PACKAGES="discogs-mcp-server@0.5.7"
+ARG UV_TOOLS="mcp-justwatch==0.0.1"
+
+# The base image drops to an unprivileged user; installing needs root, so step up and
+# back down again.
+USER root
+RUN npm install -g --no-audit --no-fund ${NPM_PACKAGES} \
+ && npm cache clean --force \
+ && for tool in ${UV_TOOLS}; do uv tool install "$tool"; done \
+ && chmod -R a+rX /opt/uv 2>/dev/null || true
+USER node

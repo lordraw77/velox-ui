@@ -20,7 +20,7 @@ services:
     volumes:
       - velox-data:/data
     environment:
-      VELOX_PROVIDER_OLLAMA_HOSTS: http://192.168.0.140:11434
+      VELOX_PROVIDER_OLLAMA_HOSTS: ${OLLAMA_HOSTS}
       VELOX_LOG_FORMAT: json
 
   # ollama:

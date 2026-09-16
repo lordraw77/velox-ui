@@ -170,7 +170,9 @@ in `velox.toml` or as an environment variable — `VELOX_PORT`, `VELOX_DB_URL`,
 masked, so the output is safe to paste into a bug report). The full reference, section
 by section, is [docs/configuration.md](docs/configuration.md);
 [docs/deployment.md](docs/deployment.md) covers Docker, PostgreSQL, a reverse proxy and
-backups.
+backups. Running an npm- or PyPI-published MCP server alongside a containerised
+velox-ui needs the companion gateway image, since the runtime carries no Node and no
+package manager: [docs/mcp-gateway.md](docs/mcp-gateway.md).
 
 ## Commands
 

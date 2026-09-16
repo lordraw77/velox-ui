@@ -5,9 +5,10 @@ Paste its contents (everything below the line) into the repository's **Overview*
 field, or point an automated `docker/build-push-action` + `peter-evans/dockerhub-description`
 step at it.
 
-The image is published as [`lordraw/velox-ui`](https://hub.docker.com/r/lordraw/velox-ui).
-Note that CI currently builds and size-checks the image but does not push it
-(`.github/workflows/ci.yml`), so releases are manual until a publish step is added.
+The image is published as [`lordraw/velox-ui`](https://hub.docker.com/r/lordraw/velox-ui)
+by `.github/workflows/publish.yml`, which also pushes this description, so editing
+this file and cutting a release is enough — there is nothing to paste by hand. CI
+(`.github/workflows/ci.yml`) builds and size-checks on every push without publishing.
 
 ---
 
@@ -124,9 +125,10 @@ volumes:
   `migrate up`, `bench`, `import openwebui`, `import mcp-config`.
 
 **Note on stdio MCP servers**: the runtime image deliberately ships no Node.js, so
-MCP servers launched with `npx` cannot run inside this container. Either run such a
-server as a separate container and connect over HTTP, or extend this image with
-Node yourself.
+MCP servers launched with `npx` cannot run inside this container. Run such a server
+in [`lordraw/velox-ui-mcp-gateway`](https://hub.docker.com/r/lordraw/velox-ui-mcp-gateway)
+instead — it republishes a stdio server as Streamable HTTP, which velox-ui then adds
+as an ordinary `http_sse` server.
 
 ## Backups
 

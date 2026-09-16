@@ -1,0 +1,42 @@
+# One MCP server behind one gateway, for a velox-ui that is already running elsewhere
+# (another compose project, a bare-metal install, another host).
+#
+#   docker compose -f one-server.yml up -d
+#
+# Register it in velox-ui as an http_sse server. The URL, with nothing around it:
+#
+#   http://<host-reachable-address>:8811/mcp
+#
+# Unlike the sidecar layout in the repository's docker-compose.mcp.yml, this one does
+# publish a port, because the client is not on this compose network. A published
+# gateway is unauthenticated: bind it to an interface only velox-ui can reach, or put
+# it behind the same reverse proxy and network policy as everything else. `127.0.0.1:`
+# in the mapping below is that decision, not a placeholder -- drop it and the LAN can
+# call every tool this server exposes.
+services:
+  discogs-mcp:
+    # Built from examples/Dockerfile.derived: the published base image ships no MCP
+    # server. `lordraw/velox-ui-mcp-gateway:latest` on its own has nothing to --stdio.
+    image: my-mcp-gateway:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.derived
+    container_name: discogs-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8811:8000"
+    command:
+      - --stdio
+      - discogs-mcp-server
+      - --outputTransport
+      - streamableHttp
+      # One child process per session. A stateless gateway starts a fresh child for
+      # every request, so `tools/list` reaches a process that never saw `initialize`
+      # and a strict server (FastMCP) answers -32602.
+      - --stateful
+      - --sessionTimeout
+      - "600000"
+      - --port
+      - "8000"
+    environment:
+      DISCOGS_PERSONAL_ACCESS_TOKEN: ${DISCOGS_PERSONAL_ACCESS_TOKEN}

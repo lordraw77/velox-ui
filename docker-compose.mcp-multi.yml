@@ -1,0 +1,107 @@
+# velox-ui with two MCP servers behind two gateway sidecars.
+#
+#   docker compose -f docker-compose.mcp-multi.yml up -d --build
+#
+# One supergateway process bridges exactly one stdio server, so N servers means N
+# sidecars -- there is no multiplexing of several servers onto one endpoint. Each runs
+# `--stateful`, one child process per session: a stateless gateway starts a fresh child
+# for every request, so `tools/list` reaches a process that never saw `initialize` and
+# a strict server (FastMCP) rejects it with -32602. They all
+# share a single image (docker/mcp-gateway/Dockerfile, built once with both servers
+# baked in) and all listen on 8000, because none of them publishes a port: on the
+# compose network the service name is what tells them apart.
+#
+# Register them in velox-ui as two http_sse servers. The URLs, with nothing around
+# them:
+#
+#   http://discogs-mcp:8000/mcp
+#   http://justwatch-mcp:8000/mcp
+#
+# velox-ui merges their tools: GET /api/tools is the union over the caller's enabled
+# servers (ADR-0020). A sidecar that dies takes down only its own tools.
+#
+# Tokens and hosts come from the .env file next to this one, which docker compose
+# loads automatically and .gitignore keeps out of the repository.
+
+# Everything the two sidecars have in common. The image is built once, by whichever
+# service docker compose reaches first; the other reuses it.
+x-mcp-gateway: &mcp-gateway
+  image: lordraw/velox-ui-mcp-gateway:latest
+  build:
+    context: .
+    dockerfile: docker/mcp-gateway/Dockerfile
+    args:
+      NPM_PACKAGES: discogs-mcp-server@0.5.7
+      UV_TOOLS: mcp-justwatch==0.0.1
+  restart: unless-stopped
+  # Deliberately no `ports`: a gateway has no authentication of its own, so it stays
+  # on the compose network where only velox-ui can reach it.
+  expose:
+    - "8000"
+
+services:
+  velox-ui:
+    image: velox-ui:latest
+    # Comment `image` and uncomment `build` to run from a source checkout.
+    build: .
+    container_name: velox-ui
+    restart: unless-stopped
+    ports:
+      - "9080:8080"
+    volumes:
+      - velox-data:/data
+    environment:
+      VELOX_LOG_FORMAT: json
+      VELOX_PROVIDER_OLLAMA_HOSTS: ${OLLAMA_HOSTS}
+      VELOX_PROVIDER_NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+    env_file:
+      - .env
+    depends_on:
+      - discogs-mcp
+      - justwatch-mcp
+
+  # An npm-published server, with a credential.
+  discogs-mcp:
+    <<: *mcp-gateway
+    container_name: discogs-mcp
+    command:
+      - --stdio
+      - discogs-mcp-server
+      - --outputTransport
+      - streamableHttp
+      - --stateful
+      - --sessionTimeout
+      - "600000"
+      - --port
+      - "8000"
+    environment:
+      DISCOGS_PERSONAL_ACCESS_TOKEN: ${DISCOGS_PERSONAL_ACCESS_TOKEN}
+
+  # A PyPI-published server, installed with uv, no credential.
+  #
+  # The command is the console script the package declares
+  # (mcp-justwatch = mcp_justwatch.server:main), not `uvx mcp-justwatch python -m
+  # mcp_justwatch.server`: the trailing `python -m ...` of that spelling is passed to
+  # the script as arguments, which it ignores, and `uvx` would re-resolve the package
+  # on every start.
+  #
+  # No JUSTWATCH_COUNTRY / JUSTWATCH_LANGUAGE here on purpose. Version 0.0.1 reads
+  # neither: country and language are per-call tool arguments (`country`, `language`,
+  # defaulting to US/en), so the model passes "IT"/"it" per call. Setting them as
+  # environment variables would look like configuration while changing nothing.
+  justwatch-mcp:
+    <<: *mcp-gateway
+    container_name: justwatch-mcp
+    command:
+      - --stdio
+      - mcp-justwatch
+      - --outputTransport
+      - streamableHttp
+      - --stateful
+      - --sessionTimeout
+      - "600000"
+      - --port
+      - "8000"
+
+volumes:
+  velox-data:

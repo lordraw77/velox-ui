@@ -1,0 +1,177 @@
+# Publishing to Docker Hub.
+#
+# Separate from ci.yml on purpose: CI builds and gates every push and pull request,
+# this runs only for a release. A tag publishes; a manual run publishes whatever you
+# name, which is how you cut a `edge` or a one-off rebuild without inventing a tag.
+#
+#   git tag v0.1.1 && git push origin v0.1.1
+#
+# Two images come out of this repository:
+#   lordraw/velox-ui               the application
+#   lordraw/velox-ui-mcp-gateway   the MCP gateway (docs/mcp-gateway.md)
+#
+# They share a version because they ship from the same commit and are tested against
+# each other; the gateway is not independently versioned.
+#
+# Required repository secrets:
+#   DOCKERHUB_USERNAME   the account, not the organisation namespace if they differ
+#   DOCKERHUB_TOKEN      an access token (Docker Hub → Account Settings → Security),
+#                        not the account password. Scope it to Read & Write.
+
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. 0.1.1, edge). Not marked latest."
+        required: true
+        default: edge
+      images:
+        description: "Which images to publish"
+        required: true
+        default: both
+        type: choice
+        options: [both, velox-ui, mcp-gateway]
+      platforms:
+        description: "Target platforms"
+        required: true
+        default: linux/amd64
+        type: choice
+        options: [linux/amd64, "linux/amd64,linux/arm64"]
+
+# A second push of the same tag should not race the first.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # A tag push publishes for amd64 only. arm64 is built under QEMU here, which turns a
+  # three-minute build into a long one and occasionally trips on native wheels; ask for
+  # it explicitly with the workflow_dispatch input when you want it.
+  PLATFORMS: ${{ github.event.inputs.platforms || 'linux/amd64' }}
+
+jobs:
+  velox-ui:
+    if: github.event_name == 'push' || github.event.inputs.images != 'mcp-gateway'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        if: contains(env.PLATFORMS, 'arm64')
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: lordraw/velox-ui
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
+
+      # Built and loaded first so the size budget is enforced on the exact image that
+      # is about to be pushed. The push below reuses this build from cache.
+      - name: Build for the size gate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          tags: velox-ui:size-check
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Enforce the image size budget
+        run: |
+          BYTES=$(docker image inspect velox-ui:size-check --format '{{.Size}}')
+          MB=$((BYTES / 1024 / 1024))
+          echo "image size: ${MB} MB (budget: 250 MB)"
+          # ADR-0015. A release is exactly the wrong moment to let this slide.
+          test "$MB" -le 250
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The overview file carries an explanatory preamble for readers of the
+      # repository; only what follows the first `---` belongs on Docker Hub.
+      - name: Repository description
+        run: sed -n '/^---$/,$p' docs/dockerhub-overview.md | tail -n +2 > /tmp/overview.md
+      - uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: lordraw/velox-ui
+          short-description: "A fast, self-hosted web interface for local and remote language models."
+          readme-filepath: /tmp/overview.md
+
+  mcp-gateway:
+    if: github.event_name == 'push' || github.event.inputs.images != 'velox-ui'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        if: contains(env.PLATFORMS, 'arm64')
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: lordraw/velox-ui-mcp-gateway
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # No size gate: ADR-0015's 250 MB is a promise about lordraw/velox-ui, and this
+      # image exists precisely to keep Node, uv and git out of that one.
+      #
+      # No NPM_PACKAGES or UV_TOOLS either. The published image ships no MCP server;
+      # baking a set in would make every user carry everyone else's.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/mcp-gateway/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Repository description
+        run: sed -n '/^---$/,$p' docs/dockerhub-overview-mcp-gateway.md | tail -n +2 > /tmp/overview.md
+      - uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: lordraw/velox-ui-mcp-gateway
+          short-description: "Runs stdio MCP servers and republishes them as Streamable HTTP for velox-ui."
+          readme-filepath: /tmp/overview.md

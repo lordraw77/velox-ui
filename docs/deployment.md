@@ -19,9 +19,17 @@ commented block to run Ollama with GPU acceleration. Everything works
 without a GPU, only slower (ADR-0008) — CPU-only is a supported
 configuration, not a degraded one.
 
-Both files set `image: velox-ui:latest` with `build: .` alongside it;
-comment out `build` to pull a published image instead of building locally,
-or the reverse to always build from the source checkout.
+`docker-compose.mcp.yml` and `docker-compose.mcp-multi.yml` add MCP servers,
+one and two of them respectively, each behind a gateway container that runs
+the server and republishes it as Streamable HTTP. The runtime image ships no
+Node and no package manager, so a `stdio` MCP server cannot be launched from
+inside it; [docs/mcp-gateway.md](mcp-gateway.md) explains the arrangement and
+`lordraw/velox-ui-mcp-gateway` is the image. These files share container
+names, so run one at a time.
+
+All of them set `image:` with `build:` alongside it; comment out `build` to
+pull a published image instead of building locally, or the reverse to always
+build from the source checkout.
 
 ### Image
 
@@ -33,6 +41,23 @@ virtualenv in a builder stage; the runtime stage copies only that venv onto
 run on ONNX Runtime and download on first use into the data volume rather
 than the image (ADR-0010). CI enforces the resulting image stays under 250
 MB (ADR-0015; current: ~189 MB, see `docs/benchmarks.md`).
+
+### Publishing
+
+`.github/workflows/publish.yml` pushes both images to Docker Hub —
+`lordraw/velox-ui` and `lordraw/velox-ui-mcp-gateway` — on a `v*` tag, and on
+demand through *Run workflow* for a one-off tag such as `edge`. A tag publishes
+`latest`; a manual run never does. The size budget is enforced against the
+loaded image before anything is pushed, so a release cannot quietly exceed it.
+Both repository descriptions are pushed from `docs/dockerhub-overview*.md` in
+the same run.
+
+A tag push builds `linux/amd64` only. `linux/arm64` is available as a manual
+input and is built under QEMU, which is slow and occasionally trips on native
+wheels — it is opt-in rather than a promise the release path makes.
+
+The workflow needs two repository secrets: `DOCKERHUB_USERNAME` and
+`DOCKERHUB_TOKEN` (an access token with Read & Write, not the password).
 
 ### Persisted data
 
