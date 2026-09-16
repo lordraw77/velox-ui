@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           # There is no lock file, so the cache key comes from the dependency
@@ -72,7 +72,7 @@ jobs:
         python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -99,7 +99,7 @@ jobs:
         server: [granian, uvicorn]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.1.0
       - name: Virtualenv on PATH
         run: |
           uv venv --python 3.12
@@ -201,7 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
