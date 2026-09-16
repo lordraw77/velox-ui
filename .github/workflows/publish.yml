@@ -59,22 +59,22 @@ jobs:
     if: github.event_name == 'push' || github.event.inputs.images != 'mcp-gateway'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: contains(env.PLATFORMS, 'arm64')
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # Before the build, not after it: a rejected credential should cost seconds, not
       # the minute and a half it takes to build an image that then cannot be pushed.
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       - name: Tags and labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: lordraw/velox-ui
           # `latest=false` turns off the action's own automatic latest tag, which on a
@@ -89,7 +89,7 @@ jobs:
       # Built and loaded first so the size budget is enforced on the exact image that
       # is about to be pushed. The push below reuses this build from cache.
       - name: Build for the size gate
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
@@ -107,7 +107,7 @@ jobs:
           test "$MB" -le 250
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: ${{ env.PLATFORMS }}
@@ -121,7 +121,7 @@ jobs:
       # repository; only what follows the first `---` belongs on Docker Hub.
       - name: Repository description
         run: sed -n '/^---$/,$p' docs/dockerhub-overview.md | tail -n +2 > /tmp/overview.md
-      - uses: peter-evans/dockerhub-description@v4
+      - uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
@@ -133,15 +133,15 @@ jobs:
     if: github.event_name == 'push' || github.event.inputs.images != 'velox-ui'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: contains(env.PLATFORMS, 'arm64')
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Tags and labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: lordraw/velox-ui-mcp-gateway
           flavor: latest=false
@@ -158,7 +158,7 @@ jobs:
             type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=raw,value=latest,enable=${{ github.event_name == 'push' }}
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
@@ -169,7 +169,7 @@ jobs:
       # No NPM_PACKAGES or UV_TOOLS either. The published image ships no MCP server;
       # baking a set in would make every user carry everyone else's.
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/mcp-gateway/Dockerfile
@@ -182,7 +182,7 @@ jobs:
 
       - name: Repository description
         run: sed -n '/^---$/,$p' docs/dockerhub-overview-mcp-gateway.md | tail -n +2 > /tmp/overview.md
-      - uses: peter-evans/dockerhub-description@v4
+      - uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
