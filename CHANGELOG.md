@@ -6,6 +6,14 @@ aspirational.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.3] - 2026-09-17
+
+MCP servers over every HTTP transport: legacy HTTP+SSE and transport detection
+join Streamable HTTP, and a legacy server added the wrong way fails with a
+clear message instead of hanging.
+
 ### Added
 
 - MCP servers over the legacy HTTP+SSE transport (`sse`), and transport
