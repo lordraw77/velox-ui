@@ -15,79 +15,105 @@ and are tested against each other. CI builds and smoke-tests it on every push
 
 # velox-ui-mcp-gateway
 
-Runs a `stdio` MCP server and republishes it as Streamable HTTP, so
-[velox-ui](https://hub.docker.com/r/lordraw/velox-ui) — or any MCP client that speaks
-HTTP — can reach it over the network.
+Runs any `stdio` MCP server — you name it at run time — and republishes it as
+Streamable HTTP, so [velox-ui](https://hub.docker.com/r/lordraw/velox-ui), or any MCP
+client that speaks HTTP, can reach it over the network.
 
 ```
 client ──HTTP POST /mcp──▶ gateway ──stdio──▶ MCP server
 ```
 
-The velox-ui runtime ships no Node.js and no package manager, by design: the frontend
-is compiled in a build stage, and the image is held under 250 MB. An MCP server
-published on npm or PyPI therefore cannot be launched from inside it. This image is
-the other half of that decision.
+Every engine is already inside: `npx`, `uvx`, `python`, `bunx`, `deno`. Nothing to
+build — the container's arguments are the server's command line, exactly as an MCP
+client config spells it.
 
 ## Quick start
 
-The image ships **no MCP server**. Which ones you want is a deployment decision, so
-add them on top:
-
-```dockerfile
-FROM lordraw/velox-ui-mcp-gateway:latest
-USER root
-RUN npm install -g --no-audit --no-fund @modelcontextprotocol/server-filesystem@2026.8.31
-USER node
-```
-
 ```bash
-docker build -t my-mcp-gateway:latest .
-docker run -d --name files-mcp -p 127.0.0.1:8811:8000 my-mcp-gateway:latest \
-  --stdio "mcp-server-filesystem /data" \
-  --outputTransport streamableHttp \
-  --stateful --sessionTimeout 600000 \
-  --port 8000
+docker run -d --name discogs-mcp \
+  -p 127.0.0.1:8811:8000 \
+  -v mcp-cache:/cache \
+  -e DISCOGS_PERSONAL_ACCESS_TOKEN=... \
+  lordraw/velox-ui-mcp-gateway:latest \
+  npx -y discogs-mcp-server@0.5.7
 ```
 
 Then add it to velox-ui as a server with transport `http_sse` and the URL
 `http://<address>:8811/mcp` — no command, no arguments.
 
-## What is in it
+```yaml
+services:
+  discogs-mcp:
+    image: lordraw/velox-ui-mcp-gateway:latest
+    command: ["npx", "-y", "discogs-mcp-server@0.5.7"]
+    environment:
+      DISCOGS_PERSONAL_ACCESS_TOKEN: ${DISCOGS_PERSONAL_ACCESS_TOKEN}
+    volumes:
+      - mcp-cache:/cache
 
-| | why |
+  justwatch-mcp:
+    image: lordraw/velox-ui-mcp-gateway:latest
+    command: ["uvx", "mcp-justwatch==0.0.1"]
+    volumes:
+      - mcp-cache:/cache
+
+volumes:
+  mcp-cache:
+```
+
+One container runs one server: N servers means N containers from the same image.
+
+## Engines
+
+| | for |
 |---|---|
-| `supergateway` | the bridge: one `--stdio` command in, one Streamable HTTP endpoint out |
-| Node + npm | npm-published MCP servers |
-| `uv` | PyPI-published servers; uv fetches its own CPython |
-| `git` | some servers pin a dependency to a git repository, and npm shells out to `git` |
+| `npx`, `node` | npm-published servers |
+| `uvx`, `uv`, `python` | PyPI-published servers, and `python -m …`; CPython is preinstalled |
+| `bunx`, `bun` | servers published for Bun |
+| `deno` | JSR servers, or `deno run npm:…` |
+| `git` | npm dependencies pinned to a git repository |
 
-Install servers at build time rather than letting `npx -y` or `uvx` fetch them on
-every start: a restart then needs no network and no writable cache, and the version
-that ran yesterday is the version that runs today.
+No `docker` CLI, on purpose: a server run as `docker run -i …` would need the host's
+Docker socket, which is root on the host, handed to a process whose tool arguments a
+model chooses.
 
-## Two things that will bite you
+## Three things that will bite you
 
-**Use `--stateful`.** Stateless mode starts a fresh child process per request, so
-`tools/list` reaches a server that never saw `initialize`; a strict implementation
-answers `-32602 Invalid request parameters`.
+**Pin the version in the command.** Packages are fetched at start, so
+`npx -y some-server` is whatever is newest that day — and a new version can rename a
+tool under a conversation that already learned the old one.
+
+**Mount `/cache`.** npm, uv, Bun and Deno all cache there. A first start downloads (a
+few seconds to a few tens of seconds); with the volume, a restart answers in about a
+second. Without it, every recreation downloads again, and a start without network
+fails.
 
 **A gateway has no authentication.** Anything that can reach `/mcp` can call every
-tool the server behind it exposes, with whatever credentials that server holds. Keep
-it on an internal network, or bind the published port to `127.0.0.1` and put a
-proxy in front. Treat it like an unauthenticated admin API, because that is what it
-is.
+tool the server exposes, with whatever credentials it holds. Keep it on an internal
+network, or bind the published port to `127.0.0.1`. Treat it like an unauthenticated
+admin API, because that is what it is.
+
+## Tuning
+
+| variable | default | |
+|---|---|---|
+| `MCP_PORT` | `8000` | listening port |
+| `MCP_STATEFUL` | `true` | one server process per session — leave it on: stateless mode sends `tools/list` to a process that never saw `initialize` |
+| `MCP_SESSION_TIMEOUT_MS` | `600000` | idle session lifetime |
+| `SUPERGATEWAY_ARGS` | — | extra supergateway flags |
+
+Arguments starting with `--` go to supergateway untouched, so a `command` of
+`[--stdio, …]` still works.
 
 ## Image details
 
-- Base: `node:22-slim`, about 380 MB with the three toolchains. Runs as the non-root
-  `node` user, working directory
-  `/home/node` — a server may write next to itself at startup, and a read-only
-  working directory kills it before the handshake.
-- Exposes `8000`. Entrypoint is `supergateway`, so container arguments are its flags.
-- Build args `NPM_PACKAGES` and `UV_TOOLS` (space-separated) install servers into a
-  derived image.
-- One process bridges one server: N servers means N containers, not one container
-  with a list.
+- Base `node:22-slim`, about 640 MB with every engine. Runs as the non-root `node`
+  user.
+- Exposes `8000`; the MCP endpoint is `/mcp`.
+- `HEALTHCHECK` on `/healthz` — liveness of the gateway. The server behind it starts
+  per session, so a failed package download shows in `docker logs`, not in the
+  health status.
+- No arguments: prints usage and exits 64.
 
 ## Links
 

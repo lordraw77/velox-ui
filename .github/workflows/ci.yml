@@ -146,8 +146,8 @@ jobs:
 
   mcp-gateway-image:
     # The companion image is published separately, so it needs its own build here or a
-    # broken Dockerfile only surfaces when someone deploys it. No push: releases are
-    # manual, same as the main image.
+    # broken Dockerfile only surfaces when someone deploys it. No push: publish.yml
+    # does that, on a tag.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -159,42 +159,51 @@ jobs:
           file: docker/mcp-gateway/Dockerfile
           tags: velox-ui-mcp-gateway:latest
           load: true
-      - name: The three toolchains the image promises are present
+      - name: Every engine the image promises runs as the runtime user
         run: |
-          docker run --rm --entrypoint sh velox-ui-mcp-gateway:latest -c \
-            'node --version && npm --version && uv --version && git --version'
-      - name: Bridge a real MCP server end to end
+          docker run --rm --entrypoint bash velox-ui-mcp-gateway:latest -c '
+            set -e
+            test "$(id -un)" = node
+            for engine in node npx uv uvx python bun bunx deno git supergateway; do
+              printf "%-13s " "$engine"; "$engine" --version | head -1
+            done'
+      - name: With no server named, it explains itself and fails
         run: |
-          docker build -q -t gateway-smoke:latest - <<'DOCKERFILE'
-          FROM velox-ui-mcp-gateway:latest
-          USER root
-          RUN npm install -g --no-audit --no-fund @modelcontextprotocol/server-everything@2026.8.31
-          USER node
-          DOCKERFILE
-          docker run -d --name gateway-smoke -p 8000:8000 gateway-smoke:latest \
-            --stdio mcp-server-everything \
-            --outputTransport streamableHttp \
-            --stateful --sessionTimeout 600000 \
-            --port 8000
-          for _ in $(seq 1 60); do
-            sleep 0.5
-            curl -sf -o /dev/null http://127.0.0.1:8000/mcp -X POST \
+          set +e
+          docker run --rm velox-ui-mcp-gateway:latest 2> usage.txt
+          status=$?
+          set -e
+          cat usage.txt
+          test "$status" -eq 64
+          grep -q "no MCP server to run" usage.txt
+      - name: Bridge a real server per main engine, chosen only by the command
+        run: |
+          docker run -d --name via-npx -p 8001:8000 velox-ui-mcp-gateway:latest \
+            npx -y @modelcontextprotocol/server-everything@2026.8.31
+          docker run -d --name via-uvx -p 8002:8000 velox-ui-mcp-gateway:latest \
+            uvx mcp-server-time==2026.8.18
+          handshake() {
+            curl -sS "http://127.0.0.1:$1/mcp" -X POST \
               -H 'Content-Type: application/json' \
               -H 'Accept: application/json, text/event-stream' \
-              -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
-              && break
+              -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}'
+          }
+          for port in 8001 8002; do
+            for _ in $(seq 1 120); do
+              # A handshake that names the server, not just an HTTP 200: an empty stream
+              # from a child that died is also a 200. The loop allows for the package
+              # download a first start does.
+              handshake "$port" 2>/dev/null | grep -q '"serverInfo"' && break
+              sleep 1
+            done
+            handshake "$port" | tee "handshake-$port.txt"
+            grep -q '"serverInfo"' "handshake-$port.txt"
           done
-          # A handshake that names the server, not just an HTTP 200: an empty stream
-          # from a child that died is also a 200.
-          curl -sS http://127.0.0.1:8000/mcp -X POST \
-            -H 'Content-Type: application/json' \
-            -H 'Accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
-            | tee /tmp/handshake.txt
-          grep -q '"serverInfo"' /tmp/handshake.txt
       - name: Gateway logs
         if: failure()
-        run: docker logs gateway-smoke
+        run: |
+          docker logs via-npx || true
+          docker logs via-uvx || true
 
   bench:
     needs: frontend

@@ -164,10 +164,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
       # No size gate: ADR-0015's 250 MB is a promise about lordraw/velox-ui, and this
-      # image exists precisely to keep Node, uv and git out of that one.
-      #
-      # No NPM_PACKAGES or UV_TOOLS either. The published image ships no MCP server;
-      # baking a set in would make every user carry everyone else's.
+      # image exists precisely to keep every MCP engine out of that one. It ships no
+      # MCP server: the container's command names one, fetched at start.
       - name: Build and push
         uses: docker/build-push-action@v7
         with:

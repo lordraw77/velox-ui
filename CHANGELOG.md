@@ -6,6 +6,23 @@ aspirational.
 
 ## [Unreleased]
 
+### Changed
+
+- `lordraw/velox-ui-mcp-gateway` now carries every MCP engine — `npx`,
+  `uvx`, `python`, `bunx`, `deno` — and runs whichever server the container's
+  arguments name: `command: ["npx", "-y", "discogs-mcp-server@0.5.7"]`, the
+  same `command` and `args` an MCP client config already has. Adding or
+  changing a server no longer means a build; the `NPM_PACKAGES` and
+  `UV_TOOLS` build arguments are gone. Packages are fetched when the container
+  starts, so pin versions in the command and mount a volume at `/cache`:
+  measured with Discogs and JustWatch, a first start answered `tools/list` in
+  13 s and 6 s, a restart with the cache in 1.3 s. Gateways run stateful by
+  default and gain a `HEALTHCHECK`. Arguments starting with `--` still go to
+  supergateway untouched, but servers are no longer preinstalled, so a 0.1.1
+  `command: [--stdio, discogs-mcp-server, …]` must name the package through an
+  engine (`npx -y discogs-mcp-server@0.5.7`). The image grows to about 640 MB
+  (from about 380), almost all of it Bun, Deno and the preinstalled CPython.
+
 ### Added
 
 - A SearXNG service in `docker-compose.mcp-multi.yml`, with
@@ -15,7 +32,6 @@ aspirational.
   tool in front of the model. The settings file enables the `json` format, whose
   absence makes the official image answer the plugin with 403, and leaves the
   secret to `SEARXNG_SECRET`, without which the container exits at startup.
-
 
 ## [0.1.1] - 2026-09-16
 

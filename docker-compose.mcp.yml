@@ -1,15 +1,16 @@
-# velox-ui together with a stdio→Streamable HTTP gateway for MCP servers.
+# velox-ui with one MCP server behind a gateway sidecar.
 #
 #   docker compose -f docker-compose.mcp.yml up -d
 #
-# The runtime image carries no Node (see the Dockerfile's frontend stage and ADR-0015),
-# so an MCP server published as an npm package cannot be started as a `stdio` server
-# from inside the container -- `npx` does not exist there. The sidecar built by
-# docker/mcp-gateway/Dockerfile runs that package and republishes it as Streamable
-# HTTP, which is the transport `mcp/http_sse.py` implements (ADR-0020).
+# The runtime image carries no Node and no package manager (ADR-0015), so an MCP server
+# published on npm or PyPI cannot be started as a `stdio` server from inside it. The
+# gateway image carries every engine -- npx, uvx, bunx, deno, python -- runs the server
+# named by its `command`, and republishes it as Streamable HTTP, the transport
+# `mcp/http_sse.py` speaks (ADR-0020). Changing server means changing `command`, not
+# rebuilding anything. docs/mcp-gateway.md has the whole arrangement.
 #
-# Register it in velox-ui as an http_sse server -- no command, no args, only a URL
-# reachable on this compose network. The URL, with nothing around it:
+# Register it in velox-ui as an http_sse server -- no command, no args, only a URL. The
+# URL, with nothing around it:
 #
 #   http://discogs-mcp:8000/mcp
 #
@@ -41,35 +42,23 @@ services:
     build:
       context: .
       dockerfile: docker/mcp-gateway/Dockerfile
-      args:
-        NPM_PACKAGES: discogs-mcp-server@0.5.7
     container_name: discogs-mcp
     restart: unless-stopped
-    # The server is already installed in the image, so this is the bare command, not
-    # `npx -y discogs-mcp-server` -- npx would refetch a git-pinned dependency on every
-    # start, which is exactly what the sidecar image exists to avoid.
-    #
-    # `--stateful` keeps one child process per session instead of spawning a fresh one
-    # per request. A stateless gateway sends `tools/list` to a process that never saw
-    # `initialize`, and a strict MCP server answers -32602. velox-ui holds the
-    # `Mcp-Session-Id` the gateway returns (mcp/http_sse.py) and sends it back on every
-    # later request, so the session is honoured.
-    command:
-      - --stdio
-      - discogs-mcp-server
-      - --outputTransport
-      - streamableHttp
-      - --stateful
-      - --sessionTimeout
-      - "600000"
-      - --port
-      - "8000"
+    # The server's own command line, exactly as an MCP client config spells it. Pin the
+    # version: the package is fetched at start, and an unpinned name is whatever is
+    # newest that day.
+    command: ["npx", "-y", "discogs-mcp-server@0.5.7"]
     environment:
       DISCOGS_PERSONAL_ACCESS_TOKEN: ${DISCOGS_PERSONAL_ACCESS_TOKEN}
-    # Deliberately no `ports`: the gateway speaks no authentication of its own, so it
+    volumes:
+      # npm, uv, bun and deno all cache under /cache: the first start downloads, every
+      # later one starts in about a second.
+      - mcp-cache:/cache
+    # Deliberately no `ports`: the gateway has no authentication of its own, so it
     # stays on the compose network where only velox-ui can reach it.
     expose:
       - "8000"
 
 volumes:
   velox-data:
+  mcp-cache:

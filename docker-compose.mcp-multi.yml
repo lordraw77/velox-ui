@@ -2,14 +2,12 @@
 #
 #   docker compose -f docker-compose.mcp-multi.yml up -d --build
 #
-# One supergateway process bridges exactly one stdio server, so N servers means N
-# sidecars -- there is no multiplexing of several servers onto one endpoint. Each runs
-# `--stateful`, one child process per session: a stateless gateway starts a fresh child
-# for every request, so `tools/list` reaches a process that never saw `initialize` and
-# a strict server (FastMCP) rejects it with -32602. They all
-# share a single image (docker/mcp-gateway/Dockerfile, built once with both servers
-# baked in) and all listen on 8000, because none of them publishes a port: on the
-# compose network the service name is what tells them apart.
+# One gateway container runs exactly one MCP server, so N servers means N containers.
+# They all use the same image, with every engine in it -- npx, uvx, bunx, deno, python
+# -- and differ only in `command`, which is the server's own command line. Adding a
+# third server is a new service block, not a build. All of them listen on 8000,
+# because none publishes a port: on the compose network the service name is what tells
+# them apart.
 #
 # Register them in velox-ui as two http_sse servers. The URLs, with nothing around
 # them:
@@ -23,17 +21,17 @@
 # Tokens and hosts come from the .env file next to this one, which docker compose
 # loads automatically and .gitignore keeps out of the repository.
 
-# Everything the two sidecars have in common. The image is built once, by whichever
-# service docker compose reaches first; the other reuses it.
+# Everything the gateways have in common.
 x-mcp-gateway: &mcp-gateway
   image: lordraw/velox-ui-mcp-gateway:latest
   build:
     context: .
     dockerfile: docker/mcp-gateway/Dockerfile
-    args:
-      NPM_PACKAGES: discogs-mcp-server@0.5.7
-      UV_TOOLS: mcp-justwatch==0.0.1
   restart: unless-stopped
+  volumes:
+    # One cache for every gateway and every engine. The first start of a server
+    # downloads it; later starts, and other gateways sharing a dependency, reuse it.
+    - mcp-cache:/cache
   # Deliberately no `ports`: a gateway has no authentication of its own, so it stays
   # on the compose network where only velox-ui can reach it.
   expose:
@@ -65,44 +63,25 @@ services:
   discogs-mcp:
     <<: *mcp-gateway
     container_name: discogs-mcp
-    command:
-      - --stdio
-      - discogs-mcp-server
-      - --outputTransport
-      - streamableHttp
-      - --stateful
-      - --sessionTimeout
-      - "600000"
-      - --port
-      - "8000"
+    command: ["npx", "-y", "discogs-mcp-server@0.5.7"]
     environment:
       DISCOGS_PERSONAL_ACCESS_TOKEN: ${DISCOGS_PERSONAL_ACCESS_TOKEN}
 
-  # A PyPI-published server, installed with uv, no credential.
+  # A PyPI-published server, no credential.
   #
-  # The command is the console script the package declares
-  # (mcp-justwatch = mcp_justwatch.server:main), not `uvx mcp-justwatch python -m
-  # mcp_justwatch.server`: the trailing `python -m ...` of that spelling is passed to
-  # the script as arguments, which it ignores, and `uvx` would re-resolve the package
-  # on every start.
+  # `uvx mcp-justwatch==0.0.1`, not the `uvx mcp-justwatch python -m
+  # mcp_justwatch.server` a desktop config for it sometimes carries: the package's
+  # console script already is `mcp_justwatch.server:main`, and the trailing
+  # `python -m ...` only reaches the script as arguments it ignores.
   #
-  # No JUSTWATCH_COUNTRY / JUSTWATCH_LANGUAGE here on purpose. Version 0.0.1 reads
-  # neither: country and language are per-call tool arguments (`country`, `language`,
-  # defaulting to US/en), so the model passes "IT"/"it" per call. Setting them as
-  # environment variables would look like configuration while changing nothing.
+  # No JUSTWATCH_COUNTRY / JUSTWATCH_LANGUAGE on purpose. Version 0.0.1 reads neither:
+  # country and language are per-call tool arguments defaulting to US/en, so the model
+  # passes "IT"/"it" per call. Setting them here would look like configuration while
+  # changing nothing.
   justwatch-mcp:
     <<: *mcp-gateway
     container_name: justwatch-mcp
-    command:
-      - --stdio
-      - mcp-justwatch
-      - --outputTransport
-      - streamableHttp
-      - --stateful
-      - --sessionTimeout
-      - "600000"
-      - --port
-      - "8000"
+    command: ["uvx", "mcp-justwatch==0.0.1"]
 
   # Not an MCP server, and deliberately not behind a gateway: velox-ui talks to
   # SearXNG directly through its builtin `searxng-websearch` plugin, which calls
@@ -135,3 +114,4 @@ services:
 
 volumes:
   velox-data:
+  mcp-cache:

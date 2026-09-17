@@ -3,6 +3,7 @@
 #
 #   docker compose -f one-server.yml up -d
 #
+# No build: the published image carries every engine, and `command` names the server.
 # Register it in velox-ui as an http_sse server. The URL, with nothing around it:
 #
 #   http://<host-reachable-address>:8811/mcp
@@ -15,28 +16,18 @@
 # call every tool this server exposes.
 services:
   discogs-mcp:
-    # Built from examples/Dockerfile.derived: the published base image ships no MCP
-    # server. `lordraw/velox-ui-mcp-gateway:latest` on its own has nothing to --stdio.
-    image: my-mcp-gateway:latest
-    build:
-      context: .
-      dockerfile: Dockerfile.derived
+    image: lordraw/velox-ui-mcp-gateway:latest
     container_name: discogs-mcp
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8811:8000"
-    command:
-      - --stdio
-      - discogs-mcp-server
-      - --outputTransport
-      - streamableHttp
-      # One child process per session. A stateless gateway starts a fresh child for
-      # every request, so `tools/list` reaches a process that never saw `initialize`
-      # and a strict server (FastMCP) answers -32602.
-      - --stateful
-      - --sessionTimeout
-      - "600000"
-      - --port
-      - "8000"
+    # The server's own command line, as an MCP client config spells it. Pinned: the
+    # package is fetched at start, and an unpinned name is whatever is newest that day.
+    command: ["npx", "-y", "discogs-mcp-server@0.5.7"]
     environment:
       DISCOGS_PERSONAL_ACCESS_TOKEN: ${DISCOGS_PERSONAL_ACCESS_TOKEN}
+    volumes:
+      - mcp-cache:/cache
+    ports:
+      - "127.0.0.1:8811:8000"
+
+volumes:
+  mcp-cache:
