@@ -59,6 +59,7 @@ services:
     depends_on:
       - discogs-mcp
       - justwatch-mcp
+      - searxng
 
   # An npm-published server, with a credential.
   discogs-mcp:
@@ -102,6 +103,35 @@ services:
       - "600000"
       - --port
       - "8000"
+
+  # Not an MCP server, and deliberately not behind a gateway: velox-ui talks to
+  # SearXNG directly through its builtin `searxng-websearch` plugin, which calls
+  # /search?format=json and provides `web_search` and `web_browse` -- the latter with
+  # its own SSRF checks. Running an MCP SearXNG server through the gateway as well
+  # would put two search tools in front of the model that do the same thing.
+  #
+  # Enable it once, as an administrator:
+  #
+  #   PUT /api/plugins/tools  {"enabled": true, "base_url": "http://searxng:8080"}
+  #
+  # docker/searxng/settings.yml explains the three settings it cannot run without.
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    environment:
+      # Required: the mounted settings file carries no key, and SearXNG refuses to start
+      # on its default one.
+      SEARXNG_SECRET: ${SEARXNG_SECRET}
+    volumes:
+      # Read-only, so the container cannot rewrite committed configuration. The image's
+      # entrypoint tries to chown it anyway and logs "Read-only file system"; that line
+      # is expected and harmless.
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    # No `ports`, same reasoning as the gateways: the limiter is off, so a published
+    # SearXNG is an open search proxy for whoever can reach it.
+    expose:
+      - "8080"
 
 volumes:
   velox-data:

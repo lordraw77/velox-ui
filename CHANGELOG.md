@@ -6,7 +6,16 @@ aspirational.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- A SearXNG service in `docker-compose.mcp-multi.yml`, with
+  `docker/searxng/settings.yml`, for the builtin `web_search` and `web_browse`
+  tools. It sits beside the MCP gateways rather than behind one: velox-ui calls
+  SearXNG directly, so an MCP wrapper would only put a second, identical search
+  tool in front of the model. The settings file enables the `json` format, whose
+  absence makes the official image answer the plugin with 403, and leaves the
+  secret to `SEARXNG_SECRET`, without which the container exits at startup.
+
 
 ## [0.1.1] - 2026-09-16
 

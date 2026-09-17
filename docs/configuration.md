@@ -97,6 +97,18 @@ that on its own. Setting `base_url` to a self-hosted SearXNG instance adds
 `web_search` and `web_browse` on top. None of them has an approval gate — they
 run immediately when the model calls them.
 
+SearXNG is reached directly, not through an MCP gateway. `docker-compose.mcp-multi.yml`
+runs one on the compose network, reachable as `http://searxng:8080`, with
+`docker/searxng/settings.yml`. The official image does not work with velox-ui
+unmodified, in two ways worth knowing before debugging either:
+
+- it enables only the `html` output format, so the plugin's
+  `/search?format=json` answers **403** until `json` is added to
+  `search.formats`;
+- mounting a settings file drops the key the image would otherwise generate, and
+  SearXNG then **exits at startup** with `server.secret_key is not changed`.
+  Pass the key as `SEARXNG_SECRET` (kept in `.env`) rather than committing it.
+
 Tools are offered to every chat once the group is enabled. A custom model can
 also request them explicitly by including `"tools"` in its `plugins` list (the
 "Builtin tools" checkbox in **Custom models**), which the client resolves into

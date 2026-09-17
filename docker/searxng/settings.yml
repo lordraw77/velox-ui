@@ -1,0 +1,29 @@
+# SearXNG for velox-ui's builtin web search (plugin `searxng-websearch`).
+#
+# Three lines of this file are load-bearing, and each was found by the instance
+# failing without it rather than by reading documentation:
+#
+# search.formats -- the image enables only `html`. velox-ui calls
+#   GET /search?q=...&format=json, which answers 403 until json is listed here. The
+#   plugin's validate step reports that as "Backend responded with HTTP 403".
+#
+# server.secret_key -- deliberately absent. Mounting this file replaces the settings
+#   the image would otherwise generate with a random key, so the default
+#   "ultrasecretkey" comes back and SearXNG exits at startup with "server.secret_key
+#   is not changed". The key comes from SEARXNG_SECRET in .env instead, so no secret
+#   is committed.
+#
+# server.limiter -- off. The limiter is bot detection for a public instance; it wants
+#   a valkey backend and rejects clients that do not look like browsers, which is
+#   exactly what velox-ui is. This instance publishes no port and is reachable only
+#   from the compose network, so there is nothing for it to protect against. Turn it
+#   back on (and add valkey) before exposing SearXNG to anyone else.
+use_default_settings: true
+
+server:
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json
