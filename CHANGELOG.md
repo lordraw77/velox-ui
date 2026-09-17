@@ -6,6 +6,13 @@ aspirational.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.2] - 2026-09-17
+
+The MCP gateway runs any server named at run time, with every engine inside,
+and SearXNG joins the multi-server deployment for the builtin web search.
+
 ### Changed
 
 - `lordraw/velox-ui-mcp-gateway` now carries every MCP engine — `npx`,
