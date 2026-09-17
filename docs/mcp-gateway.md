@@ -1,7 +1,7 @@
 # The MCP gateway image
 
-velox-ui speaks MCP over Streamable HTTP (ADR-0020) and over `stdio`. In a container,
-only the first of those is usable: the runtime image carries no Node and no package
+velox-ui speaks MCP over `stdio` and over HTTP — Streamable HTTP or the legacy SSE
+transport (ADR-0022). In a container, only HTTP is usable: the runtime image carries no Node and no package
 manager, so an MCP server published on npm or PyPI cannot be started from inside it —
 there is no `npx`, no `uvx`. Configuring one as a `stdio` server fails with
 `Could not start MCP server command 'npx': [Errno 2] No such file or directory`.
@@ -164,8 +164,9 @@ and `.gitignore` keeps out of the repository.
 | symptom in the velox-ui log | cause |
 |---|---|
 | `Could not start MCP server command 'npx'` | a `stdio` server configured inside velox-ui; use a gateway and `http_sse` instead |
-| `MCP server returned HTTP 404` | the URL is missing `/mcp`, or has a stray character — velox-ui stores it verbatim |
-| `The MCP server sent no response to the request` | the server process died before answering: a typo in the package name, no network on a first start, or a dependency npm could not resolve. `docker logs <gateway>` shows its stderr |
+| `MCP server at … returned HTTP 404` | the URL is missing `/mcp`, or has a stray character — velox-ui stores it verbatim |
+| `… closed the stream without answering` or `… did not answer 'initialize' within 60 s` | the server process died before answering: a typo in the package name, no network on a first start, or a dependency npm could not resolve. `docker logs <gateway>` shows its stderr |
+| `… is a legacy HTTP+SSE MCP endpoint` | not a gateway problem: the URL is an older SSE server, typically ending in `/sse`. Change the server's transport to *SSE (legacy HTTP+SSE)* or *HTTP — detect* (ADR-0022); no gateway is needed for it |
 | `-32602 Invalid request parameters` on `tools/list` | the gateway is running stateless; unset `MCP_STATEFUL=false` |
 
 A working gateway answers a handshake directly:

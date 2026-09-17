@@ -396,7 +396,11 @@ export interface AdminUserPage {
 
 // --- MCP and tools (phase 8) -------------------------------------------------------
 
-export type McpTransport = "stdio" | "http_sse";
+/**
+ * `http_sse` is Streamable HTTP (the name predates the legacy transport's support);
+ * `sse` is the legacy HTTP+SSE transport; `http_auto` asks the server which it speaks.
+ */
+export type McpTransport = "stdio" | "http_sse" | "sse" | "http_auto";
 export type McpApproval = "always" | "once" | "never";
 
 export interface McpServer {
@@ -404,7 +408,7 @@ export interface McpServer {
   owner_id: string | null;
   name: string;
   transport: McpTransport;
-  /** stdio: `{command, args?, env?}`; http_sse: `{url, headers?}`. Never a secret. */
+  /** stdio: `{command, args?, env?}`; every HTTP transport: `{url, headers?}`. Never a secret. */
   config: Record<string, unknown>;
   /** `"set"` when a credential is stored, otherwise null. Never the credential itself. */
   auth_hint: string | null;

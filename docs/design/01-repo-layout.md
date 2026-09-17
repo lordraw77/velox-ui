@@ -95,7 +95,7 @@ velox-ui/
 │   │   └── websearch/           # searxng.py, tavily.py, brave.py
 │   │
 │   ├── mcp/
-│   │   ├── client.py stdio.py http_sse.py
+│   │   ├── client.py stdio.py http_sse.py sse.py http_auto.py sse_events.py
 │   │   ├── manager.py           # server lifecycle, tool cache, approval gate
 │   │   └── schema_translate.py
 │   │

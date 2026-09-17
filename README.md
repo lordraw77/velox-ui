@@ -15,8 +15,8 @@ is switched off degrades to an offline badge instead of an error.
 > metrics, organization (folders, tags, pin/archive), full-text search, custom model
 > presets, an admin user console, RAG (knowledge-base collections, document upload and
 > ingestion, sqlite-vec/pgvector retrieval, citations streamed into chats whose custom
-> model carries `knowledge_ids`), MCP and tool calling (stdio and Streamable HTTP MCP
-> servers, an approval gate for tool calls, native tool calling on the
+> model carries `knowledge_ids`), MCP and tool calling (stdio, Streamable HTTP and
+> legacy HTTP+SSE MCP servers with transport detection, an approval gate for tool calls, native tool calling on the
 > OpenAI-compatible and Anthropic adapters, prompt-based emulation for models without
 > native support, and a bounded tool-call loop streamed into chats whose custom model
 > carries `tools`), Open WebUI import (`velox import openwebui`, reconstructing the

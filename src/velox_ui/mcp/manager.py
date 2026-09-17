@@ -22,7 +22,9 @@ import msgspec
 from velox_ui.db.repositories.mcp_servers import McpServerRepository
 from velox_ui.errors import NotFoundError, ValidationError
 from velox_ui.mcp.client import McpClient, McpTool, McpToolResult
+from velox_ui.mcp.http_auto import AutoHttpMcpClient
 from velox_ui.mcp.http_sse import HttpSseMcpClient
+from velox_ui.mcp.sse import SseMcpClient
 from velox_ui.mcp.stdio import StdioMcpClient
 
 if TYPE_CHECKING:
@@ -269,12 +271,21 @@ class McpManager:
         return True
 
 
+# Stored transport value -> client. ``http_sse`` is Streamable HTTP, a name kept from
+# the design doc so every server stored before ADR-0022 still means what it meant.
+_HTTP_CLIENTS: dict[str, type[HttpSseMcpClient | SseMcpClient | AutoHttpMcpClient]] = {
+    "http_sse": HttpSseMcpClient,
+    "sse": SseMcpClient,
+    "http_auto": AutoHttpMcpClient,
+}
+
+
 async def build_client(server: _ServerRecord, *, auth_token: str | None) -> McpClient:
     """Construct a transport client from a stored server's config.
 
     Raises:
-        ValidationError: If ``transport`` names anything other than ``stdio`` or
-            ``http_sse``, or the config is missing a required field.
+        ValidationError: If ``transport`` names none of ``stdio``, ``http_sse``,
+            ``sse`` or ``http_auto``, or the config is missing a required field.
     """
     config = server.config or {}
     if server.transport == "stdio":
@@ -285,12 +296,13 @@ async def build_client(server: _ServerRecord, *, auth_token: str | None) -> McpC
         if auth_token is not None:
             env[config.get("auth_env", "MCP_AUTH_TOKEN")] = auth_token
         return StdioMcpClient(command=command, args=list(config.get("args", [])), env=env)
-    if server.transport == "http_sse":
+    client_type = _HTTP_CLIENTS.get(server.transport)
+    if client_type is not None:
         url = config.get("url")
         if not url:
-            raise ValidationError("http_sse MCP server config is missing 'url'.")
+            raise ValidationError(f"{server.transport} MCP server config is missing 'url'.")
         headers = dict(config.get("headers", {}))
         if auth_token is not None:
             headers["Authorization"] = f"Bearer {auth_token}"
-        return HttpSseMcpClient(url=url, headers=headers)
+        return client_type(url=url, headers=headers)
     raise ValidationError(f"Unknown MCP transport '{server.transport}'.")

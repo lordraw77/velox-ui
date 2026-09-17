@@ -1,7 +1,7 @@
 # ADR-0020: Streamable HTTP for MCP, no built-in tools, prompt-parsed emulation, and
 # an in-stream (not persisted) tool loop
 
-**Status:** accepted
+**Status:** accepted; the transport section is superseded by ADR-0022
 **Date:** 2026-09-14
 
 ## Context

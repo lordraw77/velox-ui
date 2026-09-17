@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from velox_ui.services.mcp_import import McpImportError, parse_claude_mcp_config
@@ -42,11 +44,32 @@ def test_http_server() -> None:
         b'{"url": "https://example.com/mcp", "headers": {"X-Api-Key": "k"}}}}'
     )
     imported = parse_claude_mcp_config(raw)
-    assert imported[0].transport == "http_sse"
+    # No `type`: the importer cannot know the transport, so the server is asked.
+    assert imported[0].transport == "http_auto"
     assert imported[0].config == {
         "url": "https://example.com/mcp",
         "headers": {"X-Api-Key": "k"},
     }
+
+
+@pytest.mark.parametrize(
+    ("declared", "transport"),
+    [
+        ("http", "http_sse"),
+        ("streamable-http", "http_sse"),
+        ("streamableHttp", "http_sse"),
+        ("sse", "sse"),
+        ("SSE", "sse"),
+        (None, "http_auto"),
+        ("websocket", "http_auto"),
+    ],
+)
+def test_a_declared_http_type_selects_the_transport(
+    declared: str | None, transport: str
+) -> None:
+    entry = {"url": "http://192.168.0.244:9980/sse", "type": declared}
+    imported = parse_claude_mcp_config(json.dumps({"mcpServers": {"remote": entry}}))
+    assert imported[0].transport == transport
 
 
 def test_bare_name_keyed_map_without_wrapper() -> None:

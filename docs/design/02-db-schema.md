@@ -381,7 +381,7 @@ CREATE TABLE mcp_server (
   id         CHAR(26) PRIMARY KEY,
   owner_id   CHAR(26) REFERENCES app_user(id) ON DELETE CASCADE,
   name       TEXT NOT NULL,
-  transport  TEXT NOT NULL,                 -- 'stdio' | 'http_sse'
+  transport  TEXT NOT NULL,                 -- 'stdio' | 'http_sse' | 'sse' | 'http_auto' (ADR-0022)
   config     BLOB NOT NULL,                 -- command/args/env or url/headers
   auth_ref   TEXT,                          -- secrets go to `secret`, never here
   enabled    INTEGER NOT NULL DEFAULT 1,

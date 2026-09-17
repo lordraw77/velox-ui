@@ -43,7 +43,8 @@ def test_import_creates_stdio_and_http_servers(client: TestClient, registered: d
     assert "cwd" not in discogs["config"]
 
     remote = next(s for s in body["servers"] if s["name"] == "remote")
-    assert remote["transport"] == "http_sse"
+    # The entry declares no `type`, so the server is asked which transport it speaks.
+    assert remote["transport"] == "http_auto"
     assert remote["config"] == {
         "url": "https://example.invalid/mcp",
         "headers": {"X-Api-Key": "k"},

@@ -35,7 +35,9 @@ class ImportedMcpServer(msgspec.Struct, frozen=True):
 
     Attributes:
         name: The key it was found under (or ``"imported"`` for a single bare entry).
-        transport: ``"stdio"`` or ``"http_sse"``.
+        transport: ``"stdio"``, or for a URL the HTTP transport its ``type`` names —
+            ``"http_sse"`` (Streamable HTTP), ``"sse"`` (legacy HTTP+SSE), or
+            ``"http_auto"`` when the entry does not say.
         config: Ready to pass as ``CreateMcpServerRequest.config``.
         dropped_cwd: Whether the source entry named a working directory, which
             velox-ui's stdio transport has no field for and so does not carry over.
@@ -88,6 +90,17 @@ def parse_claude_mcp_config(raw: bytes | str) -> list[ImportedMcpServer]:
     return [_translate(name, entry) for name, entry in entries.items()]
 
 
+# Claude Code writes `"type": "http"` or `"sse"`; other hosts spell Streamable HTTP
+# several ways. Anything else, or no type at all, leaves the choice to the server.
+_HTTP_TYPES = {
+    "http": "http_sse",
+    "streamable-http": "http_sse",
+    "streamable_http": "http_sse",
+    "streamablehttp": "http_sse",
+    "sse": "sse",
+}
+
+
 def _looks_like_entry(data: dict[str, Any]) -> bool:
     return "command" in data or "url" in data
 
@@ -102,7 +115,9 @@ def _translate(name: str, entry: Any) -> ImportedMcpServer:
         headers = entry.get("headers")
         if headers:
             config["headers"] = dict(headers)
-        return ImportedMcpServer(name=name, transport="http_sse", config=config)
+        declared = str(entry.get("type") or "").strip().lower()
+        transport = _HTTP_TYPES.get(declared, "http_auto")
+        return ImportedMcpServer(name=name, transport=transport, config=config)
 
     command = entry.get("command")
     if command:

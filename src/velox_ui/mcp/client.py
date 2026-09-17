@@ -6,8 +6,11 @@ server's tools and calling one — plus the ``initialize`` handshake every trans
 requires before either works, so this is not a spec-complete SDK: no resources,
 prompts, sampling or roots support, none of which the product surface touches.
 
-Both transports (:mod:`velox_ui.mcp.stdio`, :mod:`velox_ui.mcp.http_sse`) implement
-:class:`McpClient` and share the JSON-RPC envelope helpers below.
+Every transport implements :class:`McpClient` and shares the JSON-RPC envelope helpers
+below: :mod:`velox_ui.mcp.stdio` for a local subprocess, :mod:`velox_ui.mcp.http_sse`
+for Streamable HTTP, :mod:`velox_ui.mcp.sse` for the legacy HTTP+SSE transport, and
+:mod:`velox_ui.mcp.http_auto` to choose between the two HTTP ones by asking the server
+(ADR-0022).
 """
 
 from __future__ import annotations
@@ -23,6 +26,8 @@ __all__ = [
     "MCP_PROTOCOL_VERSION",
     "McpClient",
     "McpError",
+    "McpHttpStatusError",
+    "McpLegacySseEndpointError",
     "McpTool",
     "McpToolResult",
     "next_request_id",
@@ -43,6 +48,31 @@ class McpError(VeloxError):
 
     code = ErrorCode.UPSTREAM_ERROR
     status_code = 502
+
+
+class McpHttpStatusError(McpError):
+    """An MCP HTTP endpoint answered with an error status.
+
+    Kept distinct so transport detection can tell "this URL does not speak this
+    transport" (400, 404, 405) from a real failure such as a rejected credential.
+
+    Attributes:
+        http_status: The status the endpoint returned.
+    """
+
+    def __init__(self, message: str, *, http_status: int) -> None:
+        """Create the error, remembering the upstream status."""
+        super().__init__(message)
+        self.http_status = http_status
+
+
+class McpLegacySseEndpointError(McpError):
+    """A Streamable HTTP request reached a legacy HTTP+SSE endpoint.
+
+    The endpoint answered with an event stream whose first event announces where to
+    post messages, rather than with a response. Transport detection treats this as the
+    signal to switch to :mod:`velox_ui.mcp.sse`.
+    """
 
 
 class McpTool(msgspec.Struct, frozen=True):

@@ -45,7 +45,8 @@ itself.
   and per-reply tokens/second.
 - **RAG** — knowledge collections, document upload, background ingest/embed, and
   citations streamed into the reply.
-- **Tools** — MCP servers (stdio and Streamable HTTP) with an approval gate, plus
+- **Tools** — MCP servers (stdio, Streamable HTTP and legacy SSE, with transport
+  detection) behind an approval gate, plus
   builtin tools a model can call mid-turn: the current date and time, and web
   search/browsing over a self-hosted SearXNG instance.
 - **Optional plugins** — image generation and voice (transcription and speech)

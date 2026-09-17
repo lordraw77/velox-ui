@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import sys
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from tests.fakes.mcp_http import Recorder, legacy_sse_app, streamable_app
+from tests.fakes.server import run_fake
 
 from velox_ui.db.models import Secret
 
@@ -180,3 +183,43 @@ def test_auth_token_is_encrypted_at_rest_not_stored_in_config(
     box = SecretBox(settings.secret_key)
     plaintext = box.decrypt(nonce, ciphertext, ref=ref)
     assert plaintext == "super-secret-bearer-token"
+
+
+@pytest.mark.parametrize(
+    ("transport", "app_factory", "path"),
+    [
+        ("http_sse", lambda recorder: streamable_app(recorder, mode="stream"), "/mcp"),
+        ("sse", legacy_sse_app, "/sse"),
+        ("http_auto", lambda recorder: streamable_app(recorder, mode="stream"), "/mcp"),
+        ("http_auto", legacy_sse_app, "/sse"),
+    ],
+)
+def test_every_http_transport_connects_through_the_api(
+    client: TestClient, registered: dict, transport: str, app_factory, path: str
+) -> None:
+    headers = _headers(registered)
+    with run_fake(app_factory(Recorder())) as server:
+        created = client.post(
+            "/api/mcp/servers",
+            headers=headers,
+            json={
+                "name": f"remote-{transport}",
+                "transport": transport,
+                "config": {"url": f"{server.base_url}{path}"},
+            },
+        )
+        assert created.status_code == 201, created.text
+        server_id = created.json()["id"]
+
+        connected = client.post(f"/api/mcp/servers/{server_id}/connect", headers=headers)
+    assert connected.status_code == 200, connected.text
+    assert [t["name"] for t in connected.json()] == ["echo"]
+
+
+def test_an_unknown_transport_is_rejected(client: TestClient, registered: dict) -> None:
+    created = client.post(
+        "/api/mcp/servers",
+        headers=_headers(registered),
+        json={"name": "ws", "transport": "websocket", "config": {"url": "ws://x/mcp"}},
+    )
+    assert created.status_code == 422

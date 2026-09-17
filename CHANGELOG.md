@@ -6,7 +6,31 @@ aspirational.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- MCP servers over the legacy HTTP+SSE transport (`sse`), and transport
+  detection (`http_auto`), alongside Streamable HTTP (`http_sse`, unchanged).
+  Servers built on the Python MCP SDK's `/sse` route could not be added before.
+  Detection follows the MCP specification's backwards-compatibility procedure,
+  plus the signal that SDK actually sends: 200 with an `endpoint` event rather
+  than a 4xx. The legacy client refuses a message endpoint announced on another
+  origin, so a server cannot redirect requests — and their credentials — to a
+  different host. Imported configs follow their declared `type`; one without a
+  type is detected. See ADR-0022.
+
+### Fixed
+
+- Adding a legacy SSE server as Streamable HTTP hung indefinitely instead of
+  failing. The client read each response to its end with a per-read timeout,
+  and the server's keep-alive pings reset it every 15 seconds. Both HTTP
+  clients now read event streams incrementally, stop at their answer, and
+  enforce one overall deadline per request; the Streamable HTTP client names a
+  legacy endpoint as such when it reaches one.
+- Every MCP connect and tool call left a server session open until its idle
+  timeout, because velox-ui never ended the sessions it opened. Behind the MCP
+  gateway each session is a server process, so each tool call left one running
+  for ten minutes. The Streamable HTTP client now sends `DELETE` for its
+  session on close.
 
 ## [0.1.2] - 2026-09-17
 

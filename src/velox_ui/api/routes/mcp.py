@@ -22,7 +22,9 @@ from velox_ui.services.mcp_import import McpImportError, parse_claude_mcp_config
 
 router = APIRouter(prefix="/api/mcp/servers", tags=["mcp"])
 
-_TRANSPORTS = ("stdio", "http_sse")
+# ``http_sse`` is Streamable HTTP; ``sse`` the legacy HTTP+SSE transport; ``http_auto``
+# asks the server which of the two it speaks (ADR-0022).
+_TRANSPORTS = ("stdio", "http_sse", "sse", "http_auto")
 _APPROVALS = ("always", "once", "never")
 
 

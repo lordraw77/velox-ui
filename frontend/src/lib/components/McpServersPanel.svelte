@@ -26,6 +26,15 @@
   let connecting = $state<string | null>(null);
   let toolsByServer = $state<Record<string, McpTool[]>>({});
 
+  // The stored values are terse and one of them is historical (`http_sse` means
+  // Streamable HTTP), so the interface shows what each one is.
+  const transportLabels: Record<McpTransport, string> = {
+    stdio: "mcp.transportStdio",
+    http_sse: "mcp.transportStreamable",
+    sse: "mcp.transportSse",
+    http_auto: "mcp.transportAuto",
+  };
+
   let importing = $state(false);
   let importRaw = $state("");
   let importBusy = $state(false);
@@ -161,7 +170,8 @@
                   <td>
                     <strong>{server.name}</strong>
                     <div class="mono hint">
-                      {server.transport} · {server.tool_count} {app.t("mcp.tools")}
+                      {app.t(transportLabels[server.transport] ?? server.transport)} · {server.tool_count}
+                      {app.t("mcp.tools")}
                       {#if server.auth_hint}· {app.t("mcp.credentialSet")}{/if}
                     </div>
                     {#if toolsByServer[server.id]}
@@ -225,9 +235,14 @@
             <div class="field">
               <label for="mcp-transport">{app.t("mcp.transport")}</label>
               <select id="mcp-transport" bind:value={newTransport}>
-                <option value="stdio">stdio</option>
-                <option value="http_sse">http_sse</option>
+                <option value="stdio">{app.t("mcp.transportStdio")}</option>
+                <option value="http_auto">{app.t("mcp.transportAuto")}</option>
+                <option value="http_sse">{app.t("mcp.transportStreamable")}</option>
+                <option value="sse">{app.t("mcp.transportSse")}</option>
               </select>
+              {#if newTransport !== "stdio"}
+                <p class="hint">{app.t("mcp.transportHint")}</p>
+              {/if}
             </div>
             {#if newTransport === "stdio"}
               <div class="field">
