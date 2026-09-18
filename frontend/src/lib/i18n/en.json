@@ -353,6 +353,8 @@
   "custommodel.noTools": "No MCP servers yet. Add one from MCP servers.",
   "custommodel.webTools": "Builtin tools",
   "custommodel.webToolsHint": "Lets this model check the date and time, and search or read the web when a backend is configured under Plugins.",
+  "app.panelStale": "This page is older than the server, so it cannot load that panel. Reload to pick up the new version.",
+  "app.reload": "Reload",
   "chat.finishedNotice": "\u201c{title}\u201d finished replying.",
   "chat.finishedTitle": "Reply ready \u00b7 {title}",
   "chat.finishedBody": "The model finished while you were looking elsewhere.",

@@ -46,6 +46,16 @@ def test_hashed_assets_are_cached_for_a_long_time(client: TestClient) -> None:
     assert "immutable" in response.headers["cache-control"]
 
 
+def test_an_asset_from_an_older_build_is_a_404_not_the_shell(client: TestClient) -> None:
+    # A tab open across an upgrade asks for panel code whose hashed name is gone. It has
+    # to fail as a missing file: answering with the shell would hand the browser HTML
+    # where it expects a module, and the interface's upgrade guard
+    # (frontend/src/lib/upgrade.ts) would never see the failure it reloads for.
+    response = client.get("/assets/ModelsPanel-fromAnOlderBuild.js")
+    assert response.status_code == 404
+    assert not response.headers["content-type"].startswith("text/html")
+
+
 def test_unknown_api_paths_stay_json(client: TestClient) -> None:
     # The fallback must not swallow these: a client parsing JSON would receive an
     # HTML document and a 200 where it expected a typed 404.

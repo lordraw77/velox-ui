@@ -15,6 +15,7 @@
   import Composer from "$lib/components/Composer.svelte";
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
   import NoticeBanner from "$lib/components/NoticeBanner.svelte";
+  import PanelUnavailable from "$lib/components/PanelUnavailable.svelte";
   import Header from "$lib/components/Header.svelte";
   import MessageList from "$lib/components/MessageList.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -170,39 +171,57 @@
       {#if view === "models"}
         {#await import("$lib/components/ModelsPanel.svelte") then { default: ModelsPanel }}
           <ModelsPanel />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else if view === "providers"}
         {#await import("$lib/components/ProvidersPanel.svelte") then { default: ProvidersPanel }}
           <ProvidersPanel />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else if view === "search"}
         {#await import("$lib/components/SearchPanel.svelte") then { default: SearchPanel }}
           <SearchPanel onopen={select} />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else if view === "custom-models"}
         {#await import("$lib/components/CustomModelsPanel.svelte") then { default: CustomModelsPanel }}
           <CustomModelsPanel onstart={() => (view = "chat")} />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else if view === "knowledge"}
         {#await import("$lib/components/KnowledgePanel.svelte") then { default: KnowledgePanel }}
           <KnowledgePanel />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else if view === "mcp"}
         {#await import("$lib/components/McpServersPanel.svelte") then { default: McpServersPanel }}
           <McpServersPanel />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else if view === "plugins"}
         {#await import("$lib/components/PluginsPanel.svelte") then { default: PluginsPanel }}
           <PluginsPanel />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else if view === "admin"}
         {#await import("$lib/components/AdminPanel.svelte") then { default: AdminPanel }}
           <AdminPanel />
+        {:catch}
+          <PanelUnavailable />
         {/await}
       {:else}
         {#if app.paramsOpen && app.model}
           {#await import("$lib/components/ParamsPanel.svelte") then { default: ParamsPanel }}
             <ParamsPanel />
+          {:catch}
+            <PanelUnavailable />
           {/await}
         {/if}
 

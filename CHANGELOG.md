@@ -6,7 +6,17 @@ aspirational.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- Clicking Models or Providers in a tab that had been open across an upgrade
+  left a dead panel and, in the console, "failed to fetch dynamically imported
+  module". Panels are loaded when first opened, from files whose names carry a
+  content hash, so a page older than the server asks for names that no longer
+  exist and gets a 404. The interface now reads that as "this page is out of
+  date" and reloads once — a session flag stops it becoming a loop, and a panel
+  that still cannot load says so with a Reload button instead. Reloading is
+  cheap now that a turn belongs to the conversation rather than to the page
+  (ADR-0024): the reply keeps being written and the reloaded page picks it up.
 
 ## [0.1.4] - 2026-09-18
 
