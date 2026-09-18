@@ -6,6 +6,12 @@ aspirational.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.5] - 2026-09-18
+
+An upgrade no longer breaks the tab that was open when it landed.
+
 ### Fixed
 
 - Clicking Models or Providers in a tab that had been open across an upgrade
