@@ -6,6 +6,13 @@ aspirational.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.4] - 2026-09-18
+
+A reply keeps being written while you look somewhere else, and says so when it
+lands.
+
 ### Changed
 
 - A turn belongs to the conversation, not to the connection reading it
