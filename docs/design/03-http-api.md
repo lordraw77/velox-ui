@@ -91,6 +91,8 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 | GET | `/api/chats/{id}/branch/{message_id}` | switch the active branch |
 | GET | `/api/chats/{id}/messages` | older pages: `?cursor=&limit=`, oldest first, explicit columns |
 | POST | `/api/chats/{id}/completions` | **S** the hot path (see below) |
+| GET | `/api/chats/{id}/stream?from=` | **S** read the turn already running; `0` replays it, `now` follows only what comes next (ADR-0024) |
+| POST | `/api/chats/{id}/stop` | stop the running turn; `{"stopped": bool}` |
 | POST | `/api/chats/{id}/messages/{mid}/regenerate` | **S** new sibling |
 | PATCH | `/api/chats/{id}/messages/{mid}` | edit → new sibling branch |
 | POST | `/api/chats/{id}/messages/{mid}/continue` | **S** |
@@ -111,7 +113,12 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 
 ### The streaming endpoint
 
-`POST /api/chats/{id}/completions` responds `text/event-stream`. The request carries
+`POST /api/chats/{id}/completions` responds `text/event-stream`. The turn runs as its
+own task and the response only reads it, so closing the response does not stop the
+model: opening another conversation or reloading the page leaves the reply being
+written, and `GET /api/chats/{id}/stream` picks it back up (ADR-0024). Stopping is
+`POST /api/chats/{id}/stop`. A second turn in a conversation that already has one is a
+409. The request carries
 the parent message id, the user content, the model reference (or custom model slug),
 per-turn parameter overrides, `knowledge_ids` (RAG), `tool_server_ids` (phase 8: MCP
 server ids to offer tools from) and `web_tools` (bool: whether to also offer the

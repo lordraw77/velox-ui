@@ -27,6 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; importing httpx here would
     from velox_ui.services.model_jobs import ModelJobs
     from velox_ui.services.model_params import ModelParamsStore
     from velox_ui.services.rag_jobs import RagJobs
+    from velox_ui.services.turns import TurnBroker
 
 __all__ = ["AppState"]
 
@@ -54,6 +55,7 @@ class AppState:
         "_plugins",
         "_rag_jobs",
         "_tasks",
+        "_turns",
         "db",
         "discovery",
         "local_user_id",
@@ -78,6 +80,7 @@ class AppState:
         self._rag_jobs: RagJobs | None = None
         self._mcp: McpManager | None = None
         self._plugins: PluginRegistry | None = None
+        self._turns: TurnBroker | None = None
         self._tasks: set[asyncio.Task[Any]] = set()
 
     @property
@@ -115,6 +118,15 @@ class AppState:
 
             self._mcp = McpManager(self)
         return self._mcp
+
+    @property
+    def turns(self) -> TurnBroker:
+        """Turns running independently of the connections reading them, on first use."""
+        if self._turns is None:
+            from velox_ui.services.turns import TurnBroker
+
+            self._turns = TurnBroker(self.spawn)
+        return self._turns
 
     @property
     def plugins(self) -> PluginRegistry:

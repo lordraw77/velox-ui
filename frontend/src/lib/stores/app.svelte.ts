@@ -72,6 +72,8 @@ class AppStore {
   plugins = $state<PluginInfo[]>([]);
 
   error = $state<ApiError | null>(null);
+  /** A passing, non-error message: a reply that finished while you were elsewhere. */
+  notice = $state<{ text: string; chatId: string | null } | null>(null);
   booted = $state(false);
 
   /** Whether the advanced parameter panel is open. */
@@ -337,6 +339,15 @@ class AppStore {
 
   dismissError(): void {
     this.error = null;
+  }
+
+  /** Show a notice, replacing any previous one. */
+  notify(text: string, chatId: string | null = null): void {
+    this.notice = { text, chatId };
+  }
+
+  dismissNotice(): void {
+    this.notice = null;
   }
 
   #adoptSession(session: Session): void {

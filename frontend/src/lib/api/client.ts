@@ -372,6 +372,17 @@ export class ApiClient {
     return this.request<void>(`/api/chats/${id}`, { method: "DELETE" });
   }
 
+  /**
+   * Stop the turn running in a conversation.
+   *
+   * Closing the stream no longer stops the model — the turn belongs to the
+   * conversation, not to the connection reading it (ADR-0024) — so stopping is asked
+   * for. `stopped` is false when there was nothing to stop.
+   */
+  stopTurn(id: string): Promise<{ stopped: boolean }> {
+    return this.#json("POST", `/api/chats/${id}/stop`);
+  }
+
   // --- folders -------------------------------------------------------------------
 
   folders(): Promise<Folder[]> {

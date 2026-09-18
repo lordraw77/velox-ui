@@ -18,7 +18,7 @@ from velox_ui.api.msgspec_io import json_response, read_struct
 from velox_ui.api.pagination import clamp_limit, decode_cursor, encode_cursor
 from velox_ui.api.sse import SSE_HEADERS
 from velox_ui.db.repositories.chats import ChatRepository
-from velox_ui.errors import NotFoundError
+from velox_ui.errors import ConflictError, NotFoundError
 from velox_ui.providers.base import SamplingParams
 from velox_ui.services.chat import ChatService
 
@@ -288,7 +288,7 @@ async def completions(
     # Preconditions are checked here, before a single byte is written: once the
     # response has started there is no status code left to send, and a client would
     # receive a 200 carrying a failure.
-    turn = await ChatService(state).prepare(
+    prepared = await ChatService(state).prepare(
         chat_id=chat_id,
         user_id=principal.user_id,
         content=body.content,
@@ -300,6 +300,77 @@ async def completions(
         tool_server_ids=body.tool_server_ids,
         web_tools=body.web_tools,
     )
+    # The turn runs as its own task; this response only reads it. Closing the response
+    # -- another chat opened, a page reloaded, a laptop closed -- no longer stops the
+    # model (services/turns.py, ADR-0024).
+    try:
+        turn = state.turns.start(chat_id, prepared.stream())
+    except RuntimeError as exc:
+        raise ConflictError(
+            "This conversation already has a turn running. Read it with "
+            f"GET /api/chats/{chat_id}/stream, or stop it first."
+        ) from exc
     return StreamingResponse(
-        turn.stream(), media_type="text/event-stream", headers=dict(SSE_HEADERS)
+        turn.read(), media_type="text/event-stream", headers=dict(SSE_HEADERS)
     )
+
+
+@router.get("/{chat_id}/stream", summary="Read the turn running in a conversation")
+async def read_turn(
+    chat_id: str, request: Request, principal: CurrentPrincipal, state: State
+) -> StreamingResponse:
+    """Attach to a turn already running, replaying it from the start.
+
+    What makes a reader disposable: opening the chat again, or reloading the page,
+    picks the turn back up where it is. The replay costs nothing to reconstruct — the
+    event protocol starts with the ``start`` frame carrying both message ids — so a
+    client that missed the first half still ends up with the whole answer.
+
+    ``from`` skips frames the caller already has: a frame index, or ``now`` for only
+    what happens next — what a client watching a turn it navigated away from wants,
+    since it needs the end of the turn and not its text.
+
+    Raises:
+        NotFoundError: The conversation is not the caller's, or has no turn to read.
+    """
+    async with state.db.session() as session:
+        chat = await ChatRepository(session).get(chat_id, user_id=principal.user_id)
+    if chat is None:
+        raise NotFoundError("No such conversation.")
+
+    turn = state.turns.readable(chat_id)
+    if turn is None:
+        raise NotFoundError("No turn is running in this conversation.")
+
+    raw_start = request.query_params.get("from", "0")
+    if raw_start == "now":
+        start = len(turn.frames)
+    else:
+        try:
+            start = int(raw_start)
+        except ValueError:
+            start = 0
+    return StreamingResponse(
+        turn.read(start=start), media_type="text/event-stream", headers=dict(SSE_HEADERS)
+    )
+
+
+@router.post("/{chat_id}/stop", summary="Stop the turn running in a conversation")
+async def stop_turn(chat_id: str, principal: CurrentPrincipal, state: State) -> Response:
+    """Stop a running turn, keeping what the model produced (ADR-0005).
+
+    Closing the connection no longer does this, so stopping is now something a caller
+    asks for -- the interface's stop button, not a dropped socket.
+
+    Answers with msgspec rather than a declared response model: this path sits inside
+    the chat prefix the hot-path boundary test guards, and a ``response_model`` there
+    puts Pydantic in the completion path (ADR-0001).
+
+    Raises:
+        NotFoundError: If the conversation is not the caller's.
+    """
+    async with state.db.session() as session:
+        chat = await ChatRepository(session).get(chat_id, user_id=principal.user_id)
+    if chat is None:
+        raise NotFoundError("No such conversation.")
+    return json_response({"stopped": await state.turns.cancel(chat_id)})

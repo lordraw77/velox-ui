@@ -14,6 +14,7 @@
   import AuthGate from "$lib/components/AuthGate.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
+  import NoticeBanner from "$lib/components/NoticeBanner.svelte";
   import Header from "$lib/components/Header.svelte";
   import MessageList from "$lib/components/MessageList.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -156,6 +157,14 @@
 
       {#if app.error}
         <ErrorBanner error={app.error} ondismiss={() => app.dismissError()} />
+      {/if}
+
+      {#if app.notice}
+        <NoticeBanner
+          text={app.notice.text}
+          chatId={app.notice.chatId}
+          ondismiss={() => app.dismissNotice()}
+        />
       {/if}
 
       {#if view === "models"}

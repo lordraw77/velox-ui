@@ -34,6 +34,7 @@ import type {
   UsageEvent,
 } from "$lib/api/types";
 import { markdown } from "$lib/markdown/client";
+import { announceReply, askToNotify } from "$lib/notify";
 import { TokenSink } from "$lib/stream/sink";
 import { app } from "./app.svelte";
 
@@ -98,6 +99,9 @@ class ConversationStore {
   loadingOlder = $state(false);
 
   #controller: AbortController | null = null;
+  // Turns left running while the reader is elsewhere, watched only for their end.
+  #watchers = new Map<string, AbortController>();
+  #detaching = false;
   #sink: TokenSink | null = null;
   #lastMarkdownAt = 0;
   #pendingCustomModel: PendingCustomModel | null = null;
@@ -106,9 +110,16 @@ class ConversationStore {
     return this.messages.length === 0;
   }
 
-  /** Load a stored conversation, replacing whatever is on screen. */
+  /** Load a stored conversation, replacing whatever is on screen.
+   *
+   * Leaving one conversation does not stop its turn (ADR-0024): the reply is still
+   * being written, and this only stops watching it closely. Arriving at a conversation
+   * whose turn is still running picks it back up.
+   */
   async open(chatId: string, branch?: string): Promise<void> {
-    this.stop();
+    this.#detach();
+    this.#watchers.get(chatId)?.abort();
+    this.#watchers.delete(chatId);
     this.loading = true;
     try {
       const chat: Chat = await api.chat(chatId, branch);
@@ -121,14 +132,16 @@ class ConversationStore {
       this.#renderAll();
     } catch (error) {
       app.report(error);
+      return;
     } finally {
       this.loading = false;
     }
+    await this.#attach(chatId);
   }
 
   /** Start a fresh, unsaved conversation. */
   reset(): void {
-    this.stop();
+    this.#detach();
     this.id = null;
     this.title = "";
     this.messages = [];
@@ -241,13 +254,13 @@ class ConversationStore {
       parent_id: parentId ?? null,
     });
 
-    const sink = new TokenSink();
-    this.#sink = sink;
-    let assistant: RenderedMessage | null = null;
-    const pendingCalls = new Map<string, ToolCallEvent>();
+    // Asked for here, where a reply is about to be produced, rather than on load: a
+    // permission prompt before the person has done anything gets dismissed.
+    void askToNotify();
 
+    let response: Response;
     try {
-      const response = await api.stream(
+      response = await api.stream(
         `/api/chats/${chatId}/completions`,
         {
           content,
@@ -261,22 +274,54 @@ class ConversationStore {
         },
         this.#controller.signal,
       );
+    } catch (error) {
+      this.streaming = false;
+      this.#controller = null;
+      app.report(error);
+      return;
+    }
 
-      for await (const event of readSse(response.body!, this.#controller.signal)) {
+    await this.#follow(response, this.#controller.signal, chatId, optimisticUser);
+  }
+
+  /**
+   * Read a turn's events into the conversation until it ends.
+   *
+   * Shared by a turn this client started and one it is picking back up, because the
+   * event protocol is the same either way: it begins with the `start` frame carrying
+   * both message ids, so a replay rebuilds the turn exactly as the original arrival
+   * would have (docs/design/03-http-api.md).
+   */
+  async #follow(
+    response: Response,
+    signal: AbortSignal,
+    chatId: string,
+    optimisticUser?: RenderedMessage,
+  ): Promise<void> {
+    const sink = new TokenSink();
+    this.#sink = sink;
+    let assistant: RenderedMessage | null = null;
+    const pendingCalls = new Map<string, ToolCallEvent>();
+
+    try {
+      for await (const event of readSse(response.body!, signal)) {
         switch (event.event) {
           case "start": {
             const start = JSON.parse(event.data) as StartEvent;
             // The server allocated the ids before writing any row (ADR-0005), so the
             // optimistic user message can adopt its real id immediately.
-            optimisticUser.id = start.user_message_id;
-            assistant = this.#appendLocal({
-              id: start.message_id,
-              role: "assistant",
-              content: "",
-              parent_id: start.user_message_id,
-              status: "streaming",
-              model_ref: start.model_ref,
-            });
+            if (optimisticUser) optimisticUser.id = start.user_message_id;
+            // On a replay the message may already be on screen; the id says so.
+            assistant =
+              this.messages.find((entry) => entry.id === start.message_id) ??
+              this.#appendLocal({
+                id: start.message_id,
+                role: "assistant",
+                content: "",
+                parent_id: start.user_message_id,
+                status: "streaming",
+                model_ref: start.model_ref,
+              });
             sink.subscribe((text) => {
               if (!assistant) return;
               assistant.live = text;
@@ -374,14 +419,18 @@ class ConversationStore {
         this.#render(assistant, true);
       }
       if (this.id) app.touchChat(this.id, this.title);
+      // Finished while the reader was elsewhere: say so, in the tab and, where the
+      // browser allows it, on the desktop.
+      if (document.hidden || this.id !== chatId) announceReply(this.title, chatId);
     } catch (error) {
       if ((error as Error).name === "AbortError") {
-        // The user pressed Stop. The server keeps what the model produced.
         sink.flushNow();
         if (assistant) {
           assistant.live = sink.text;
           assistant.content = sink.text;
-          assistant.status = "stopped";
+          // Detaching leaves the turn running, so the reply is not finished and must
+          // not be shown as stopped; only an asked-for stop ends it.
+          if (!this.#detaching) assistant.status = "stopped";
           this.#render(assistant, true);
         }
       } else {
@@ -389,19 +438,103 @@ class ConversationStore {
         if (assistant) assistant.status = "error";
       }
     } finally {
-      this.streaming = false;
-      this.phase = null;
-      this.#controller = null;
+      if (this.#sink === sink) {
+        this.streaming = false;
+        this.phase = null;
+        this.#controller = null;
+        this.#sink = null;
+      }
       sink.dispose();
-      this.#sink = null;
     }
   }
 
-  /** Abort the turn in flight. */
+  /**
+   * Stop the turn in flight, as an instruction rather than a side effect.
+   *
+   * Closing the connection stops nothing now (ADR-0024), so the stop button says so to
+   * the server. What the model produced up to here is kept.
+   */
   stop(): void {
+    const chatId = this.id;
     this.#controller?.abort();
     this.#controller = null;
     this.#sink?.flushNow();
+    this.streaming = false;
+    this.phase = null;
+    if (chatId) {
+      this.#watchers.get(chatId)?.abort();
+      this.#watchers.delete(chatId);
+      void api.stopTurn(chatId).catch(() => {
+        // Nothing to stop, or it ended first: either way there is nothing to say.
+      });
+    }
+  }
+
+  /**
+   * Stop reading the turn without stopping it, and keep an ear on it.
+   *
+   * What leaving a conversation does. The watcher reads nothing but the end of the
+   * turn (`from=now`), so the reply arriving is still announced.
+   */
+  #detach(): void {
+    const chatId = this.id;
+    const wasStreaming = this.streaming;
+    this.#detaching = true;
+    try {
+      this.#controller?.abort();
+    } finally {
+      this.#detaching = false;
+    }
+    this.#controller = null;
+    this.#sink?.flushNow();
+    this.streaming = false;
+    this.phase = null;
+    if (wasStreaming && chatId) this.#watch(chatId, this.title);
+  }
+
+  /** Watch a turn elsewhere, to announce it when it ends. */
+  #watch(chatId: string, title: string): void {
+    if (this.#watchers.has(chatId)) return;
+    const controller = new AbortController();
+    this.#watchers.set(chatId, controller);
+    void (async () => {
+      try {
+        const response = await api.stream(
+          `/api/chats/${chatId}/stream?from=now`,
+          undefined,
+          controller.signal,
+        );
+        for await (const event of readSse(response.body!, controller.signal)) {
+          if (event.event === "done" || event.event === "error") break;
+        }
+        if (!controller.signal.aborted) announceReply(title, chatId);
+      } catch {
+        // Gone, finished before the watcher attached, or the page is going away.
+        // Nothing here is worth an error banner.
+      } finally {
+        this.#watchers.delete(chatId);
+      }
+    })();
+  }
+
+  /** Pick up a turn already running in the conversation just opened. */
+  async #attach(chatId: string): Promise<void> {
+    this.#controller = new AbortController();
+    let response: Response;
+    try {
+      response = await api.stream(
+        `/api/chats/${chatId}/stream`,
+        undefined,
+        this.#controller.signal,
+      );
+    } catch {
+      // The ordinary case: no turn is running in this conversation.
+      this.#controller = null;
+      return;
+    }
+    this.streamError = null;
+    this.streaming = true;
+    await this.#follow(response, this.#controller.signal, chatId);
   }
 
   /** Approve or reject a tool call the stream is blocked on. */

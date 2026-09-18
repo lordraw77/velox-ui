@@ -6,7 +6,24 @@ aspirational.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- A turn belongs to the conversation, not to the connection reading it
+  (ADR-0024). Opening another chat, reloading the page or closing a laptop no
+  longer stops the model mid-answer: the turn runs as its own task, the
+  response reads it, and `GET /api/chats/{id}/stream` picks a running turn back
+  up — replaying it from the start, or following only what comes next.
+  Stopping is now `POST /api/chats/{id}/stop`, which the stop button calls;
+  before, stopping and losing a connection were the same event. A second turn
+  in a conversation that already has one answers 409.
+
+### Added
+
+- A reply that finishes while you are in another conversation or another tab
+  says so: an in-app notice and a line in the tab title, plus a system
+  notification where the browser allows one. System notifications need a secure
+  context, so on a plain-HTTP instance only the in-app channel appears; putting
+  TLS in front of velox-ui turns the other on with no further change.
 
 ## [0.1.3] - 2026-09-17
 
