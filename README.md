@@ -1,7 +1,17 @@
+![velox-ui — a fast, self-hosted frontend for local and remote language models: 10.4 ms first-token overhead, 0.88 s cold start, 128 MB idle memory, 186 MB image](docs/assets/social-preview.png)
+
 # velox-ui
 
 A fast, self-hosted frontend for local and remote language models. Functional parity
 with Open WebUI, built for latency and a small footprint.
+
+![velox-ui streaming a reply from a local model, with the per-reply speed badge appearing underneath it when the reply lands](docs/assets/demo.gif)
+
+*One reply from a local model, in real time. The line under it — `19.1 tok/s ·
+first token 95ms · 34 in / 76 out · free` — is the backend's own counters, shown on
+every reply rather than hidden behind a setting. The recording is the real server and
+the real interface with only the model scripted, so it is reproducible:
+`python scripts/record_demo.py`.*
 
 **Local backends are the primary case, not a fallback.** No API key is required,
 loading a model is reported as its own state rather than as a timeout, and a host that
@@ -13,10 +23,12 @@ is switched off degrades to an offline badge instead of an error.
 > NVIDIA, Cloudflare, Gemini, Anthropic, OpenAI) adapters, local model management, a
 > web interface with streaming, virtual scrolling, markdown and per-reply speed
 > metrics, organization (folders, tags, pin/archive), full-text search, custom model
-> presets, an admin user console, RAG (knowledge-base collections, document upload and
+> presets, an admin user console, replies that survive leaving the page and announce
+> themselves when they land (ADR-0024), RAG (knowledge-base collections, document upload and
 > ingestion, sqlite-vec/pgvector retrieval, citations streamed into chats whose custom
 > model carries `knowledge_ids`), MCP and tool calling (stdio, Streamable HTTP and
-> legacy HTTP+SSE MCP servers with transport detection, an approval gate for tool calls, native tool calling on the
+> legacy HTTP+SSE MCP servers with transport detection (ADR-0022), an approval gate for
+> tool calls, native tool calling on the
 > OpenAI-compatible and Anthropic adapters, prompt-based emulation for models without
 > native support, and a bounded tool-call loop streamed into chats whose custom model
 > carries `tools`), Open WebUI import (`velox import openwebui`, reconstructing the
@@ -31,7 +43,7 @@ is switched off degrades to an offline badge instead of an error.
 ## Quickstart
 
 ```bash
-docker run -d -p 8080:8080 -v velox-data:/data --name velox-ui velox-ui:latest
+docker run -d -p 8080:8080 -v velox-data:/data --name velox-ui lordraw/velox-ui:latest
 ```
 
 Open <http://localhost:8080> and create the first account — it becomes the

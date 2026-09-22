@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Source for the GitHub social preview card (Settings -> General -> Social preview).
+
+  1280x640 is GitHub's recommended size; the card is cropped to roughly 1200x630 in
+  most previews, so nothing meaningful sits within 40px of an edge. Colours are the
+  interface's own dark-theme tokens from frontend/src/styles/app.css, and the numbers
+  are the measured figures from docs/benchmarks.md — update both together.
+
+  Render with:  rsvg-convert -w 1280 -h 640 social-preview.svg -o social-preview.png
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <radialGradient id="glow" cx="0.82" cy="0.12" r="0.75">
+      <stop offset="0%" stop-color="#4c8dff" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#4c8dff" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#4c8dff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4c8dff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#4c8dff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="#17171a"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+
+  <g font-family="Montserrat">
+    <text x="88" y="196" font-size="104" font-weight="700" fill="#ececef" letter-spacing="-3">
+      velox<tspan fill="#4c8dff">-ui</tspan>
+    </text>
+    <text x="88" y="256" font-size="33" font-weight="500" fill="#a0a0a8">
+      A fast, self-hosted frontend for local and remote language models
+    </text>
+  </g>
+
+  <rect x="88" y="308" width="1104" height="2" fill="url(#rule)"/>
+
+  <g font-family="Source Code Pro">
+    <g transform="translate(88 0)">
+      <text y="396" font-size="54" font-weight="600" fill="#ececef">10.4 ms</text>
+      <text y="436" font-size="23" fill="#70707a">first-token overhead</text>
+    </g>
+    <g transform="translate(400 0)">
+      <text y="396" font-size="54" font-weight="600" fill="#ececef">0.88 s</text>
+      <text y="436" font-size="23" fill="#70707a">cold start</text>
+    </g>
+    <g transform="translate(680 0)">
+      <text y="396" font-size="54" font-weight="600" fill="#ececef">128 MB</text>
+      <text y="436" font-size="23" fill="#70707a">memory, idle</text>
+    </g>
+    <g transform="translate(990 0)">
+      <text y="396" font-size="54" font-weight="600" fill="#ececef">186 MB</text>
+      <text y="436" font-size="23" fill="#70707a">image size</text>
+    </g>
+  </g>
+
+  <g font-family="Source Code Pro" font-size="24">
+    <text x="88" y="556" fill="#70707a">Ollama · llama.cpp · vLLM · LM Studio · OpenAI · Anthropic</text>
+    <text x="1192" y="556" text-anchor="end" fill="#70707a">MIT licensed</text>
+  </g>
+
+  <g font-family="Source Code Pro" font-size="26">
+    <text x="1192" y="132" text-anchor="end" fill="#56d391">no API key required</text>
+  </g>
+
+</svg>

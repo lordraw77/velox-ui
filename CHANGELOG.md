@@ -6,6 +6,16 @@ aspirational.
 
 ## [Unreleased]
 
+### Added
+
+- The README opens with a picture instead of a table: the social preview card as a
+  banner, then an eight-second recording of a reply streaming in with the per-reply
+  speed badge landing at the end. The recording is reproducible rather than a
+  screencast — `scripts/record_demo.py` drives the real server and the real interface
+  in a real browser, with only the model replaced by `scripts/demo_backend.py`, which
+  replays Ollama's wire format at a fixed pace so the badge reports what the clip
+  actually streamed. `docs/assets/` holds the output and how to regenerate it.
+
 ### Changed
 
 - Documentation audited against the running application. The Docker Hub
