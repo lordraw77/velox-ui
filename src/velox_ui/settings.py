@@ -372,6 +372,13 @@ def _merge_endpoints(
 
 def _split_list(raw: str) -> list[str]:
     """Split a comma-separated environment value into a list."""
+    # TODO: a JSON array is accepted silently and parsed as one item. The TOML file
+    # writes these fields as `ollama_hosts = ["http://host:11434"]`, so copying that
+    # spelling into VELOX_PROVIDER_OLLAMA_HOSTS is the obvious mistake to make, and it
+    # produces a provider whose base_url is the literal `["http://host:11434"]` — which
+    # surfaces much later, as a health check reporting a URL with no protocol rather
+    # than as a configuration error at startup. Either parse a leading `[` as JSON, or
+    # reject it here with a message naming the comma-separated form.
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
