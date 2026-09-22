@@ -6,7 +6,18 @@ aspirational.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Documentation audited against the running application. The Docker Hub
+  overviews now mention that a reply survives leaving the page and announces
+  itself, and that desktop notifications need HTTPS; the benchmark figures are
+  re-measured for 0.1.5, naming the two that moved and why. `03-http-api.md`
+  marks with **○** the 23 endpoints it designs but does not yet have, checked
+  against the application's own OpenAPI schema, and `01-repo-layout.md` lists
+  the modules that exist rather than the ones phase 1 planned. Two documented
+  paths were simply wrong: the profile endpoint is `/api/auth/me`, and the
+  streaming path in the deployment and layout docs is
+  `POST /api/chats/{id}/completions`.
 
 ## [0.1.5] - 2026-09-18
 

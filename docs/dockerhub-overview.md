@@ -26,7 +26,7 @@ docker run -d \
   --name velox-ui \
   -p 8080:8080 \
   -v velox-data:/data \
-  lordraw/velox-ui:latest
+  lordraw/lordraw/velox-ui:latest
 ```
 
 Open `http://localhost:8080` and create the first account — it becomes the
@@ -42,13 +42,16 @@ itself.
 - **Cloud backends** — OpenAI, Groq, OpenRouter, Mistral, NVIDIA, Cloudflare
   Workers AI, Google Gemini and Anthropic. Credentials are encrypted at rest.
 - **Streaming chat** with a branching message tree, virtual scrolling, markdown,
-  and per-reply tokens/second.
+  and per-reply tokens/second. A reply belongs to the conversation, not to the
+  page: open another chat, reload, or close the laptop and the model keeps
+  going — coming back picks the reply up where it is, and one that finishes
+  while you are elsewhere says so.
 - **RAG** — knowledge collections, document upload, background ingest/embed, and
   citations streamed into the reply.
-- **Tools** — MCP servers (stdio, Streamable HTTP and legacy SSE, with transport
-  detection) behind an approval gate, plus
-  builtin tools a model can call mid-turn: the current date and time, and web
-  search/browsing over a self-hosted SearXNG instance.
+- **Tools** — MCP servers behind an approval gate, over stdio, Streamable HTTP or
+  the legacy HTTP+SSE transport, with detection for a URL whose transport you do
+  not know. Plus builtin tools a model can call mid-turn: the current date and
+  time, and web search/browsing over a self-hosted SearXNG instance.
 - **Optional plugins** — image generation and voice (transcription and speech)
   against any OpenAI-compatible endpoint. Disabled by default and never even
   imported when off.
@@ -68,8 +71,8 @@ These are CI gates, not marketing numbers — a regression fails the build.
 | Time-to-first-token overhead vs. calling the backend directly | < 15 ms p95 | ~10 ms |
 | Container image | < 250 MB | ~189 MB |
 | Idle memory | < 150 MB | ~131 MB |
-| Open a 5 000-message conversation | < 150 ms | ~9 ms |
-| Frontend bundle | < 200 KB gzip | ~47 KB |
+| Open a 5 000-message conversation | < 150 ms | ~10 ms |
+| Frontend bundle | < 200 KB gzip | ~50 KB |
 
 No GPU, no Node.js and no PyTorch in the runtime image.
 
@@ -91,12 +94,19 @@ Everything has a working default; none of this is required.
 Backends, plugins and MCP servers can also be added from the interface, where
 credentials are stored encrypted.
 
+**On notifications**: a reply that finishes while you are in another conversation
+or another tab always shows an in-app notice and a line in the tab title. The
+desktop notification on top of that needs a secure context, which browsers grant
+to HTTPS and to localhost but not to a plain `http://192.168.x.x` address — put
+velox-ui behind a reverse proxy with TLS and it starts working, with nothing to
+configure here.
+
 ## With Ollama
 
 ```yaml
 services:
   velox-ui:
-    image: lordraw/velox-ui:latest
+    image: lordraw/lordraw/velox-ui:latest
     restart: unless-stopped
     ports:
       - "8080:8080"

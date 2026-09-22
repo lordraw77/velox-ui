@@ -16,7 +16,7 @@ primary use case, not a fallback.
 | [../benchmarks.md](../benchmarks.md) | Benchmark methodology and current results |
 | [../configuration.md](../configuration.md) | Full `velox.toml`/environment reference |
 | [../deployment.md](../deployment.md) | Docker, PostgreSQL, reverse proxy, backups |
-| [../adr/](../adr/) | Architecture decision records 0001-0021 |
+| [../adr/](../adr/) | Architecture decision records 0001-0024 |
 
 > Framework and stack decisions were confirmed at review: FastAPI + msgspec, Granian,
 > Svelte 5, Apache-2.0, SQLite/WAL default with optional PostgreSQL.

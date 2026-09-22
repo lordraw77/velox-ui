@@ -127,17 +127,17 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          tags: velox-ui:latest
+          tags: lordraw/velox-ui:latest
           load: true
       - name: Enforce the image size budget
         run: |
-          BYTES=$(docker image inspect velox-ui:latest --format '{{.Size}}')
+          BYTES=$(docker image inspect lordraw/velox-ui:latest --format '{{.Size}}')
           MB=$((BYTES / 1024 / 1024))
           echo "image size: ${MB} MB (budget: 250 MB)"
           test "$MB" -le 250
       - name: Smoke test the container
         run: |
-          docker run -d --name velox -p 8080:8080 velox-ui:latest
+          docker run -d --name velox -p 8080:8080 lordraw/velox-ui:latest
           for _ in $(seq 1 60); do
             sleep 0.5
             curl -sf http://127.0.0.1:8080/ready && break

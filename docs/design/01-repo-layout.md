@@ -34,35 +34,35 @@ velox-ui/
 │   │   ├── schemas/             # msgspec Structs for request/response bodies
 │   │   └── routes/
 │   │       ├── system.py        # /health /ready /metrics /api/version
-│   │       ├── auth.py          # login, refresh, logout, register, oidc callback
-│   │       ├── users.py admin.py
-│   │       ├── apikeys.py
-│   │       ├── providers.py     # CRUD + health + discovery + probe
+│   │       ├── auth.py          # login, refresh, logout, register, profile
+│   │       ├── admin.py apikeys.py
+│   │       ├── providers.py     # CRUD + discovery + probe
 │   │       ├── models.py        # unified model list, capabilities, visibility
 │   │       ├── local_models.py  # ollama/llama.cpp management (pull/ps/unload/show)
-│   │       ├── chats.py         # chat CRUD, tree ops, branching, search, export
-│   │       ├── completions.py   # POST /api/chat/stream (the hot path)
-│   │       ├── compare.py       # side-by-side multi-model runs
-│   │       ├── folders.py tags.py prompts.py custom_models.py
-│   │       ├── files.py rag.py
+│   │       ├── chats.py         # chat CRUD and the hot path: POST .../completions,
+│   │       │                    #   plus .../stream and .../stop (ADR-0024)
+│   │       ├── folders.py tags.py custom_models.py
+│   │       ├── rag.py           # collections, documents, ingest jobs
 │   │       ├── mcp.py tools.py
-│   │       ├── share.py         # public share links (unauthenticated read)
-│   │       ├── openai_compat.py # /v1/chat/completions, /v1/models, /v1/embeddings
-│   │       └── plugins.py
+│   │       ├── search.py        # full-text search
+│   │       ├── audio.py images.py plugins.py
+│   │       └── (designed, not built: compare.py, share.py, openai_compat.py —
+│   │            see 03-http-api.md, where those rows carry ○)
 │   │
 │   ├── services/                # all business logic; routes stay thin
 │   │   ├── chat.py              # orchestrates a turn: context build -> provider -> tee
 │   │   ├── context.py           # message tree -> provider messages, token budgeting
-│   │   ├── branching.py         # edit/regenerate create siblings, active_leaf tracking
 │   │   ├── persistence.py       # out-of-band writer queue (never blocks the stream)
-│   │   ├── titles.py            # async auto-title generation
-│   │   ├── models_registry.py   # discovery + LRU cache + manual refresh
-│   │   ├── capabilities.py      # per-model capability resolution (probed, not hardcoded)
-│   │   ├── routing.py           # fallback chains, visible provider switch events
-│   │   ├── usage.py quota.py ratelimit.py
-│   │   ├── search.py            # FTS5 / tsvector abstraction
-│   │   ├── sharing.py export.py
-│   │   └── importers/openwebui.py
+│   │   ├── turns.py             # turns that outlive the connection reading them
+│   │   ├── providers.py         # configured backends, discovery, health
+│   │   ├── model_jobs.py        # pulls and creates, streamed as job events
+│   │   ├── model_params.py      # saved per-model sampling parameters
+│   │   ├── rag_ingest.py rag_jobs.py
+│   │   ├── mcp_import.py        # Claude Code mcpServers config -> server rows
+│   │   └── (designed, not built: branching.py, titles.py, models_registry.py,
+│   │        capabilities.py, routing.py, usage.py, quota.py, ratelimit.py,
+│   │        search.py, sharing.py, export.py — the built equivalents live in
+│   │        repositories/, providers/ and the routes above)
 │   │
 │   ├── providers/
 │   │   ├── base.py              # Protocol + shared Structs (the provider contract)

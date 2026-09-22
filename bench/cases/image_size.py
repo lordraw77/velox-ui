@@ -13,7 +13,7 @@ import shutil
 from bench.harness import BenchCase, BenchContext, Measurement
 
 TARGET_MB = 250.0
-IMAGE = "velox-ui:latest"
+IMAGE = "lordraw/velox-ui:latest"
 
 
 async def run(context: BenchContext) -> Measurement:

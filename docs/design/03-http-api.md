@@ -5,7 +5,9 @@ Design document. All paths are prefixed `/api` except the OpenAI-compatible surf
 with msgspec. Authentication is a bearer JWT or an API key (`Authorization: Bearer …`);
 public share routes are unauthenticated by design.
 
-Legend: **A** = admin only, **P** = public (no auth), **S** = streaming.
+Legend: **A** = admin only, **P** = public (no auth), **S** = streaming, **○** =
+designed here but not built yet. The marks are checked against the running
+application's OpenAPI schema, so a row without **○** is a route that exists.
 
 ## System
 
@@ -25,18 +27,18 @@ Legend: **A** = admin only, **P** = public (no auth), **S** = streaming.
 | POST | `/api/auth/login` | returns access JWT + refresh cookie |
 | POST | `/api/auth/refresh` | rotating refresh tokens, reuse detection |
 | POST | `/api/auth/logout` | revokes the refresh family |
-| GET | `/api/auth/oidc/login` | **P** optional OIDC start |
-| GET | `/api/auth/oidc/callback` | **P** |
-| GET/PATCH | `/api/me` | profile + UI settings |
+| GET | `/api/auth/oidc/login` | ○ **P** optional OIDC start |
+| GET | `/api/auth/oidc/callback` | ○ **P** |
+| GET/PATCH | `/api/auth/me` | profile + UI settings |
 | GET/POST | `/api/me/api-keys` | key is returned once, on creation |
 | DELETE | `/api/me/api-keys/{id}` | |
 | GET/POST | `/api/admin/users` | **A** phase 6: keyset list (`?cursor=&limit=`); create bypasses `open_registration` |
 | PATCH | `/api/admin/users/{id}/role` | **A** phase 6; refuses to demote the caller's own account |
 | PATCH | `/api/admin/users/{id}/status` | **A** phase 6; refuses to disable the caller's own account |
 | DELETE | `/api/admin/users/{id}` | **A** phase 6; refuses to delete the caller's own account |
-| GET/PUT | `/api/admin/settings` | **A** runtime settings in `setting` — not yet implemented |
-| GET/PUT | `/api/admin/access-rules` | **A** provider/model permissions — not yet implemented |
-| GET | `/api/admin/usage` | **A** usage and cost aggregates — not yet implemented |
+| GET/PUT | `/api/admin/settings` | ○ **A** runtime settings in `setting` |
+| GET/PUT | `/api/admin/access-rules` | ○ **A** provider/model permissions |
+| GET | `/api/admin/usage` | ○ **A** usage and cost aggregates |
 
 ## Providers and models
 
@@ -49,10 +51,10 @@ Legend: **A** = admin only, **P** = public (no auth), **S** = streaming.
 | POST | `/api/providers/probe` | test a base URL before saving; returns detected kind |
 | POST | `/api/providers/autodiscover` | probe the well-known local ports |
 | POST | `/api/providers/{id}/refresh` | force model rediscovery |
-| GET | `/api/providers/{id}/health` | cached; never blocks |
+| GET | `/api/providers/{id}/health` | ○ cached; never blocks |
 | GET | `/api/models` | unified list, local first, grouped, with capabilities, `supported_params` and `features` |
-| PATCH | `/api/models/{provider_id}/{model_key}` | rename / hide |
-| GET | `/api/models/{provider_id}/{model_key}` | full capability detail |
+| PATCH | `/api/models/{provider_id}/{model_key}` | ○ rename / hide |
+| GET | `/api/models/{provider_id}/{model_key}` | ○ full capability detail |
 | GET/PUT/DELETE | `/api/model-params/{model_ref}` | the caller's saved parameters for one model, applied to every turn; parameters its backend does not accept are rejected |
 
 ### Local model management
@@ -88,28 +90,27 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 | GET | `/api/chats/{id}` | the newest page of the active branch + `messages_cursor`; `?branch=&limit=` |
 | PATCH | `/api/chats/{id}` | **phase 6**: rename, pin, archive, move — only the fields present in the body are touched |
 | DELETE | `/api/chats/{id}` | soft delete |
-| GET | `/api/chats/{id}/branch/{message_id}` | switch the active branch |
+| GET | `/api/chats/{id}/branch/{message_id}` | ○ switch the active branch |
 | GET | `/api/chats/{id}/messages` | older pages: `?cursor=&limit=`, oldest first, explicit columns |
 | POST | `/api/chats/{id}/completions` | **S** the hot path (see below) |
 | GET | `/api/chats/{id}/stream?from=` | **S** read the turn already running; `0` replays it, `now` follows only what comes next (ADR-0024) |
 | POST | `/api/chats/{id}/stop` | stop the running turn; `{"stopped": bool}` |
-| POST | `/api/chats/{id}/messages/{mid}/regenerate` | **S** new sibling |
-| PATCH | `/api/chats/{id}/messages/{mid}` | edit → new sibling branch |
-| POST | `/api/chats/{id}/messages/{mid}/continue` | **S** |
-| POST | `/api/chats/{id}/stop` | cancels the in-flight turn |
-| POST | `/api/chats/{id}/title` | regenerate the auto-title |
-| GET | `/api/chats/{id}/export` | JSON export |
-| POST | `/api/chats/import` | idempotent by chat id |
+| POST | `/api/chats/{id}/messages/{mid}/regenerate` | ○ **S** new sibling |
+| PATCH | `/api/chats/{id}/messages/{mid}` | ○ edit → new sibling branch |
+| POST | `/api/chats/{id}/messages/{mid}/continue` | ○ **S** |
+| POST | `/api/chats/{id}/title` | ○ regenerate the auto-title |
+| GET | `/api/chats/{id}/export` | ○ JSON export |
+| POST | `/api/chats/import` | ○ idempotent by chat id |
 | GET | `/api/search?q=&cursor=` | **phase 6** FTS over titles and messages, dialect-neutral (see 02-db-schema.md) |
-| POST | `/api/compare` | **S** one prompt, N models, multiplexed stream |
+| POST | `/api/compare` | ○ **S** one prompt, N models, multiplexed stream |
 | GET/POST | `/api/folders` | **phase 6** flat list; nesting via `parent_id` |
 | PATCH/PUT/DELETE | `/api/folders/{id}`, `/api/folders/{id}/move` | **phase 6** rename; reparent + reorder; delete (children cascade, chats detach) |
 | GET/POST | `/api/tags` | **phase 6** |
 | PATCH/DELETE | `/api/tags/{id}` | **phase 6** |
 | PUT/DELETE | `/api/tags/{id}/chats/{chat_id}` | **phase 6** attach / detach, idempotent |
 | GET | `/api/tags/{id}/chats`, `/api/tags/for-chat/{id}` | **phase 6** |
-| POST | `/api/chats/{id}/share` | create a link |
-| GET | `/api/share/{token}` | **P** read-only rendering |
+| POST | `/api/chats/{id}/share` | ○ create a link |
+| GET | `/api/share/{token}` | ○ **P** read-only rendering |
 
 ### The streaming endpoint
 
@@ -169,7 +170,7 @@ message `stopped`; `POST /stop` does the same from another tab.
 | GET | `/api/custom-models` | **phase 6** the caller's own, plus `shared`/`public` ones |
 | POST | `/api/custom-models` | **phase 6** slug must be unique |
 | GET/PATCH/DELETE | `/api/custom-models/{id}` | **phase 6** a private model owned by someone else answers 403/404 |
-| GET/POST/PATCH/DELETE | `/api/prompts…` | not yet implemented |
+| GET/POST/PATCH/DELETE | `/api/prompts…` | ○ not yet implemented |
 
 `tools`, `knowledge_ids`, `plugins` and `fallback_chain` are carried on `custom_model`.
 `knowledge_ids` (phase 7) and `tools` (phase 8) are both acted on: `tools` is a list of
@@ -207,14 +208,16 @@ is). `fallback_chain` is still carried but unused by any phase so far.
 
 ## OpenAI-compatible gateway
 
-velox-ui as a single gateway in front of local and cloud backends.
+velox-ui as a single gateway in front of local and cloud backends. Designed, not
+built: every row below is marked **○**, and the paragraph after the table describes
+how it is meant to work rather than how it works.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/v1/models` | every visible model the caller may use |
-| POST | `/v1/chat/completions` | **S** streaming and non-streaming |
-| POST | `/v1/embeddings` | routed to the configured embedder/provider |
-| POST | `/v1/completions` | legacy text completion, best effort |
+| GET | `/v1/models` | ○ every visible model the caller may use |
+| POST | `/v1/chat/completions` | ○ **S** streaming and non-streaming |
+| POST | `/v1/embeddings` | ○ routed to the configured embedder/provider |
+| POST | `/v1/completions` | ○ legacy text completion, best effort |
 
 Authentication is a velox API key. This surface reuses the same service layer as the
 UI path, so routing, fallback, quotas and usage accounting apply identically.

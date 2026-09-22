@@ -9,7 +9,7 @@
 
 services:
   velox-ui:
-    image: velox-ui:latest
+    image: lordraw/velox-ui:latest
     build: .
     container_name: velox-ui
     restart: unless-stopped

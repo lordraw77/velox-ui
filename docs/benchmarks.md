@@ -23,15 +23,24 @@ Measured on a 4-CPU Linux container (`Linux-5.14.0-737.el9.x86_64`, Python
 3.12.13) — not dedicated hardware, so treat the absolute numbers as a floor
 rather than a ceiling on a quieter machine.
 
+Refreshed for 0.1.5.
+
 | Case | Target | p50 | p95 | Status |
 |---|---|---|---|---|
-| `ttft_overhead` | < 15 ms p95 | 9.3 ms | 10.3 ms | pass |
-| `cold_start` | < 1 s | 1.027 s | 1.047 s | **fails on this host** |
+| `ttft_overhead` | < 15 ms p95 | 9.6 ms | 10.5 ms | pass |
+| `cold_start` | < 1 s | 1.028 s | 1.109 s | **fails on this host** |
 | `rss_idle` | < 150 MB | 131.3 MB | — | pass |
-| `image_size` | < 250 MB | 189.0 MB | — | pass |
-| `open_chat_5k` | < 150 ms | 8.7 ms | 9.6 ms | pass |
-| `chat_list_10k` | < 30 ms | 1.3 ms | 1.9 ms | pass |
-| `bundle_size` | < 200 KB gzip | 46.2 KB | — | pass |
+| `image_size` | < 250 MB | 189.2 MB | — | pass |
+| `open_chat_5k` | < 150 ms | 10.1 ms | 13.2 ms | pass |
+| `chat_list_10k` | < 30 ms | 1.3 ms | 1.8 ms | pass |
+| `bundle_size` | < 200 KB gzip | 50.1 KB | — | pass |
+
+Two figures moved since 0.1.0 and are worth naming rather than leaving to a
+reader comparing tables. `ttft_overhead` gained about 0.4 ms at the median when
+a turn stopped being its request (ADR-0024): the frames now pass through a
+buffer the response reads, which is one scheduling hop per frame. `bundle_size`
+grew from 46.2 KB to 50.1 KB gzipped across the same releases — MCP transport
+selection, the turn notices and the upgrade guard — against a 200 KB budget.
 
 `cold_start` runs marginally over budget on this particular host (a shared,
 virtualized container, not the kind of machine the 1 s target was set

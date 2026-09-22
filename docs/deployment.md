@@ -84,8 +84,9 @@ full-text search and vector retrieval use PostgreSQL-native `tsvector` and
 
 ## Reverse proxy
 
-The streaming completion endpoint (`POST /api/chat/stream`) is
-Server-Sent Events over a long-lived connection. A proxy in front of
+The streaming endpoints — `POST /api/chats/{id}/completions` and
+`GET /api/chats/{id}/stream`, which reads a turn already running — are
+Server-Sent Events over long-lived connections. A proxy in front of
 velox-ui needs:
 
 - Buffering disabled for the streaming path (nginx: `proxy_buffering off;`
@@ -95,6 +96,13 @@ velox-ui needs:
   (ADR-0008: a slow local model is a normal state, not a failure).
 - WebSocket-style upgrade headers are **not** needed; this is plain HTTP
   chunked streaming, not a WebSocket.
+
+A proxy cutting one of those connections no longer costs an answer: the turn
+belongs to the conversation, not to the connection reading it (ADR-0024), so
+the reply keeps being written and the interface picks it back up. Terminating
+TLS here has a second effect worth knowing: desktop notifications for a reply
+that lands while the reader is elsewhere need a secure context, so they start
+working once velox-ui is served over HTTPS, with nothing to configure.
 
 `GET /health` is a liveness probe (process is up); `GET /ready` additionally
 checks the database is reachable and migrations are current — use `/ready`

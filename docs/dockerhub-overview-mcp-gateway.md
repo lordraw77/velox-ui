@@ -27,6 +27,10 @@ Every engine is already inside: `npx`, `uvx`, `python`, `bunx`, `deno`. Nothing 
 build — the container's arguments are the server's command line, exactly as an MCP
 client config spells it.
 
+For `stdio` servers only. A server that already speaks HTTP needs no gateway: since
+0.1.3 velox-ui connects to Streamable HTTP and to the older HTTP+SSE transport
+directly, and detects which one a URL speaks.
+
 ## Quick start
 
 ```bash

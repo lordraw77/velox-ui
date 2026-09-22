@@ -39,7 +39,7 @@ x-mcp-gateway: &mcp-gateway
 
 services:
   velox-ui:
-    image: velox-ui:latest
+    image: lordraw/velox-ui:latest
     # Comment `image` and uncomment `build` to run from a source checkout.
     build: .
     container_name: velox-ui
