@@ -1,0 +1,46 @@
+name: Bug report
+description: Something in velox-ui doesn't work as documented.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that triggers it. Include a config or request body if relevant.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: velox-ui version
+      description: Output of `velox --version`, or the image tag if running from Docker.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment
+      options:
+        - Docker (lordraw/velox-ui)
+        - pip / uv install
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: Model backend
+      description: Ollama, llama.cpp, or the cloud provider involved, if relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server logs or browser console output. Redact API keys and hostnames if needed.
+      render: shell
