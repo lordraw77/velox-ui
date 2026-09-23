@@ -49,10 +49,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # A tag push publishes for amd64 only. arm64 is built under QEMU here, which turns a
-  # three-minute build into a long one and occasionally trips on native wheels; ask for
-  # it explicitly with the workflow_dispatch input when you want it.
-  PLATFORMS: ${{ github.event.inputs.platforms || 'linux/amd64' }}
+  # A tag push publishes for amd64 and arm64. arm64 is built under QEMU here, which
+  # turns a three-minute build into a long one; a workflow_dispatch run can still ask
+  # for amd64 only when that matters more than the extra minutes.
+  PLATFORMS: ${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}
 
 jobs:
   velox-ui:
