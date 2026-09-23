@@ -6,6 +6,12 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-23
+
+The README leads with the demo instead of a table, the docs are audited against
+the running application, and a tagged release now builds for arm64 as well as
+amd64.
+
 ### Added
 
 - The README opens with a picture instead of a table: the social preview card as a
@@ -28,6 +34,11 @@ aspirational.
   paths were simply wrong: the profile endpoint is `/api/auth/me`, and the
   streaming path in the deployment and layout docs is
   `POST /api/chats/{id}/completions`.
+- A `v*` tag now builds and pushes `linux/amd64,linux/arm64` by default,
+  instead of amd64 only with arm64 behind an explicit `workflow_dispatch`
+  input. `lordraw/velox-ui:0.1.5` and `lordraw/velox-ui-mcp-gateway:0.1.5`
+  were rebuilt and republished multi-arch after the fact; every tag from here
+  on ships both architectures directly.
 
 ## [0.1.5] - 2026-09-18
 
