@@ -6,6 +6,23 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-08
+
+A conversation can carry its own system prompt.
+
+### Added
+
+- A system prompt bound to the conversation on screen. The new "System prompt" button
+  in the header opens a panel to edit it; it is stored on the chat
+  (`chat.system_prompt`, migration `4d8f2b61a7c3`), sent with every turn, and a new
+  conversation always starts without one. `POST /api/chats` and
+  `PATCH /api/chats/{id}` accept `system_prompt`, and `GET /api/chats/{id}` returns it.
+
+### Fixed
+
+- A chat started from a custom model sent that model's system prompt on the first turn
+  only; it is now saved with the chat and applies to every turn.
+
 ## [0.1.6] - 2026-09-23
 
 The README leads with the demo instead of a table, the docs are audited against
