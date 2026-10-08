@@ -53,6 +53,8 @@ export interface ChatSummary {
 }
 
 export interface Chat extends ChatSummary {
+  /** System prompt bound to this conversation alone, or null. */
+  system_prompt: string | null;
   active_leaf_id: string | null;
   created_at: number;
   /** The newest page of the active branch, oldest first. */

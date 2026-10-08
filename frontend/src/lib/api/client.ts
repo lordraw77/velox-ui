@@ -353,17 +353,29 @@ export class ApiClient {
     title: string,
     modelRef: string | null,
     customModelId?: string | null,
+    systemPrompt?: string | null,
   ): Promise<{ id: string; title: string; custom_model_id: string | null }> {
     return this.request("/api/chats", {
       method: "POST",
-      body: JSON.stringify({ title, model_ref: modelRef, custom_model_id: customModelId ?? null }),
+      body: JSON.stringify({
+        title,
+        model_ref: modelRef,
+        custom_model_id: customModelId ?? null,
+        system_prompt: systemPrompt || null,
+      }),
     });
   }
 
   /** Rename, pin, archive or move a conversation. Only the given fields are patched. */
   updateChat(
     id: string,
-    patch: { title?: string; pinned?: boolean; archived?: boolean; folder_id?: string | null },
+    patch: {
+      title?: string;
+      pinned?: boolean;
+      archived?: boolean;
+      folder_id?: string | null;
+      system_prompt?: string | null;
+    },
   ): Promise<Chat> {
     return this.#json("PATCH", `/api/chats/${id}`, patch);
   }

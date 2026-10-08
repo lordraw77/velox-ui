@@ -79,6 +79,9 @@ class AppStore {
   /** Whether the advanced parameter panel is open. */
   paramsOpen = $state(false);
 
+  /** Whether the system prompt panel of the current conversation is open. */
+  systemPromptOpen = $state(false);
+
   /** Every model across every provider, local first. */
   get models(): ModelEntry[] {
     return this.providers.flatMap((group) => group.models);

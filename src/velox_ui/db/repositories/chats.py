@@ -125,6 +125,7 @@ class ChatRepository:
         folder_id: str | None = None,
         model_ref: str | None = None,
         custom_model_id: str | None = None,
+        system_prompt: str | None = None,
         pinned: bool = False,
         archived: bool = False,
         meta: dict[str, Any] | None = None,
@@ -146,6 +147,7 @@ class ChatRepository:
             active_leaf_id=None,
             model_ref=model_ref,
             custom_model_id=custom_model_id,
+            system_prompt=system_prompt,
             pinned=pinned,
             archived=archived,
             message_count=0,
@@ -557,6 +559,7 @@ class ChatRepository:
         pinned: bool | None = None,
         archived: bool | None = None,
         folder_id: str | msgspec.UnsetType | None = msgspec.UNSET,
+        system_prompt: str | msgspec.UnsetType | None = msgspec.UNSET,
     ) -> bool:
         """Patch a conversation's sidebar-facing fields.
 
@@ -569,6 +572,8 @@ class ChatRepository:
             folder_id: New folder, or ``None`` to move to the root. Left unset when
                 the caller does not want to touch it, since ``None`` is itself a
                 meaningful value here.
+            system_prompt: New system prompt, or ``None`` to clear it. Left unset when
+                the caller does not want to touch it.
 
         Returns:
             Whether a row was updated.
@@ -582,6 +587,8 @@ class ChatRepository:
             values["archived"] = archived
         if folder_id is not msgspec.UNSET:
             values["folder_id"] = folder_id
+        if system_prompt is not msgspec.UNSET:
+            values["system_prompt"] = system_prompt or None
         result = await self._session.execute(
             update(Chat)
             .where(Chat.id == chat_id, Chat.user_id == user_id, Chat.deleted_at.is_(None))

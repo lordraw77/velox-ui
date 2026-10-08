@@ -106,6 +106,13 @@ class ConversationStore {
   #lastMarkdownAt = 0;
   #pendingCustomModel: PendingCustomModel | null = null;
 
+  /**
+   * System prompt of the conversation on screen. It belongs to that conversation
+   * alone: `reset()` clears it, so a new chat always starts without one. Before the
+   * chat exists it is a draft, saved with the chat on the first send.
+   */
+  systemPrompt = $state("");
+
   get isEmpty(): boolean {
     return this.messages.length === 0;
   }
@@ -125,6 +132,7 @@ class ConversationStore {
       const chat: Chat = await api.chat(chatId, branch);
       this.id = chat.id;
       this.title = chat.title;
+      this.systemPrompt = chat.system_prompt ?? "";
       this.messages = chat.messages.map(toRendered);
       this.olderCursor = chat.messages_cursor;
       this.usage = null;
@@ -144,6 +152,7 @@ class ConversationStore {
     this.#detach();
     this.id = null;
     this.title = "";
+    this.systemPrompt = "";
     this.messages = [];
     this.olderCursor = null;
     this.usage = null;
@@ -157,6 +166,7 @@ class ConversationStore {
    */
   startFromCustomModel(model: CustomModel): void {
     this.reset();
+    this.systemPrompt = model.system_prompt ?? "";
     this.#pendingCustomModel = {
       id: model.id,
       systemPrompt: model.system_prompt,
@@ -165,6 +175,25 @@ class ConversationStore {
       toolServerIds: model.tools,
       webToolsEnabled: model.plugins.includes("tools"),
     };
+  }
+
+  /**
+   * Set the system prompt of this conversation. Saved at once when the chat exists,
+   * otherwise kept as a draft until the first message creates it.
+   */
+  async setSystemPrompt(text: string): Promise<void> {
+    const chatId = this.id;
+    if (chatId === null) {
+      this.systemPrompt = text;
+      return;
+    }
+    try {
+      const updated = await api.updateChat(chatId, { system_prompt: text.trim() ? text : null });
+      if (this.id === chatId) this.systemPrompt = updated.system_prompt ?? "";
+    } catch (error) {
+      app.report(error);
+      throw error;
+    }
   }
 
   /**
@@ -233,6 +262,7 @@ class ConversationStore {
         content.slice(0, 80) || app.t("chat.untitled"),
         modelRef,
         startingModel?.id,
+        this.systemPrompt,
       );
       chatId = created.id;
       this.id = created.id;
@@ -266,7 +296,6 @@ class ConversationStore {
           content,
           model_ref: modelRef,
           parent_id: parentId ?? null,
-          system_prompt: startingModel?.systemPrompt ?? undefined,
           params: startingModel?.params ?? undefined,
           knowledge_ids: startingModel?.knowledgeIds ?? undefined,
           tool_server_ids: startingModel?.toolServerIds ?? undefined,

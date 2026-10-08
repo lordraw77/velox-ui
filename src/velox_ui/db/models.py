@@ -310,6 +310,7 @@ class Chat(Base):
     custom_model_id: Mapped[str | None] = mapped_column(
         ForeignKey("custom_model.id", ondelete="SET NULL")
     )
+    system_prompt: Mapped[str | None] = longtext()
     pinned: Mapped[BoolInt] = mapped_column(default=False)
     archived: Mapped[BoolInt] = mapped_column(default=False)
     message_count: Mapped[int] = mapped_column(Integer, default=0)

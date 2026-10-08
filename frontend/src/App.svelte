@@ -217,6 +217,14 @@
           <PanelUnavailable />
         {/await}
       {:else}
+        {#if app.systemPromptOpen}
+          {#await import("$lib/components/SystemPromptPanel.svelte") then { default: SystemPromptPanel }}
+            <SystemPromptPanel />
+          {:catch}
+            <PanelUnavailable />
+          {/await}
+        {/if}
+
         {#if app.paramsOpen && app.model}
           {#await import("$lib/components/ParamsPanel.svelte") then { default: ParamsPanel }}
             <ParamsPanel />

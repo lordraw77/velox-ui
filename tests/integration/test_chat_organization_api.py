@@ -76,3 +76,38 @@ def test_create_chat_with_custom_model_id(client: TestClient, registered: dict) 
 
     fetched = client.get(f"/api/chats/{chat.json()['id']}", headers=headers)
     assert fetched.json()["custom_model_id"] == model_id
+
+
+def test_system_prompt_is_bound_to_its_chat(client: TestClient, registered: dict) -> None:
+    headers = _headers(registered)
+    first = client.post("/api/chats", headers=headers, json={"title": "A"}).json()["id"]
+    second = client.post("/api/chats", headers=headers, json={"title": "B"}).json()["id"]
+
+    set_prompt = client.patch(
+        f"/api/chats/{first}", headers=headers, json={"system_prompt": "Answer in Italian."}
+    )
+    assert set_prompt.status_code == 200, set_prompt.text
+    assert set_prompt.json()["system_prompt"] == "Answer in Italian."
+
+    assert client.get(f"/api/chats/{first}", headers=headers).json()["system_prompt"] == (
+        "Answer in Italian."
+    )
+    # A chat created afterwards, or beside it, starts without one.
+    assert client.get(f"/api/chats/{second}", headers=headers).json()["system_prompt"] is None
+
+    # Patching something else leaves it alone; null clears it.
+    client.patch(f"/api/chats/{first}", headers=headers, json={"pinned": True})
+    assert client.get(f"/api/chats/{first}", headers=headers).json()["system_prompt"] == (
+        "Answer in Italian."
+    )
+    cleared = client.patch(f"/api/chats/{first}", headers=headers, json={"system_prompt": None})
+    assert cleared.json()["system_prompt"] is None
+
+
+def test_create_chat_with_system_prompt(client: TestClient, registered: dict) -> None:
+    headers = _headers(registered)
+    created = client.post(
+        "/api/chats", headers=headers, json={"title": "S", "system_prompt": "Be brief."}
+    )
+    assert created.status_code == 201
+    assert created.json()["system_prompt"] == "Be brief."

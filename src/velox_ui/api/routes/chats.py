@@ -32,6 +32,7 @@ class CreateChat(msgspec.Struct):
     folder_id: str | None = None
     model_ref: str | None = None
     custom_model_id: str | None = None
+    system_prompt: str | None = None
 
 
 class UpdateChat(msgspec.Struct):
@@ -44,6 +45,7 @@ class UpdateChat(msgspec.Struct):
     pinned: bool | msgspec.UnsetType = msgspec.UNSET
     archived: bool | msgspec.UnsetType = msgspec.UNSET
     folder_id: str | msgspec.UnsetType | None = msgspec.UNSET
+    system_prompt: str | msgspec.UnsetType | None = msgspec.UNSET
 
 
 class CompletionRequest(msgspec.Struct):
@@ -70,6 +72,7 @@ async def create_chat(request: Request, principal: CurrentPrincipal, state: Stat
             folder_id=body.folder_id,
             model_ref=body.model_ref,
             custom_model_id=body.custom_model_id,
+            system_prompt=body.system_prompt or None,
         )
         await session.flush()
         payload = {
@@ -78,6 +81,7 @@ async def create_chat(request: Request, principal: CurrentPrincipal, state: Stat
             "folder_id": chat.folder_id,
             "model_ref": chat.model_ref,
             "custom_model_id": chat.custom_model_id,
+            "system_prompt": chat.system_prompt,
             "created_at": chat.created_at,
         }
     return json_response(payload, status_code=201)
@@ -162,6 +166,7 @@ async def get_chat(
             "folder_id": chat.folder_id,
             "model_ref": chat.model_ref,
             "custom_model_id": chat.custom_model_id,
+            "system_prompt": chat.system_prompt,
             "pinned": bool(chat.pinned),
             "archived": bool(chat.archived),
             "active_leaf_id": chat.active_leaf_id,
@@ -222,6 +227,9 @@ async def update_chat(
 ) -> Response:
     """Patch a conversation's sidebar-facing fields.
 
+    ``system_prompt`` binds a system message to this conversation alone; it is applied
+    to every later turn and never carried into a new conversation.
+
     Every field in the body is optional; a field absent from the JSON stays
     untouched, and ``folder_id: null`` moves the conversation to the root (distinct
     from omitting it).
@@ -238,6 +246,7 @@ async def update_chat(
             pinned=None if body.pinned is msgspec.UNSET else body.pinned,
             archived=None if body.archived is msgspec.UNSET else body.archived,
             folder_id=body.folder_id,
+            system_prompt=body.system_prompt,
         )
         if not updated:
             raise NotFoundError("No such conversation.")
@@ -249,6 +258,7 @@ async def update_chat(
             "folder_id": chat.folder_id,
             "model_ref": chat.model_ref,
             "custom_model_id": chat.custom_model_id,
+            "system_prompt": chat.system_prompt,
             "pinned": bool(chat.pinned),
             "archived": bool(chat.archived),
             "updated_at": chat.updated_at,

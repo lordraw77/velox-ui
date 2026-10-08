@@ -103,6 +103,17 @@
       {offline > 0 ? `${offline} ${app.t("providers.offline")}` : app.t("providers.online")}
     </span>
 
+    <button
+      class="btn btn-ghost"
+      class:open={app.systemPromptOpen}
+      onclick={() => (app.systemPromptOpen = !app.systemPromptOpen)}
+      aria-pressed={app.systemPromptOpen}
+      type="button"
+      data-testid="system-prompt-toggle"
+    >
+      {app.t("systemPrompt.title")}
+    </button>
+
     {#if app.model}
       <button
         class="btn btn-ghost"

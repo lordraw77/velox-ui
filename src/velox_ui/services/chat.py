@@ -512,7 +512,9 @@ class ChatService:
             parent_id: Branch point. Defaults to the conversation's active leaf, which
                 is the ordinary "continue the conversation" case.
             params: Per-turn sampling overrides.
-            system_prompt: System message for this turn.
+            system_prompt: System message for this turn. Used only when the
+                conversation has none of its own: the one saved on the chat
+                (``PATCH /api/chats/{id}``) applies to every turn and wins.
             knowledge_ids: Collection ids to retrieve context from before the turn
                 starts (the client resolves these from the chat's custom model, the
                 same way it already resolves ``system_prompt``). Empty is the default
@@ -547,12 +549,13 @@ class ChatService:
             if chat is None:
                 raise NotFoundError("No such conversation.")
             branch_from = parent_id or chat.active_leaf_id
+            chat_system_prompt = chat.system_prompt
             path = await repository.load_active_path(chat_id, leaf_id=branch_from)
 
         capabilities = await self._capabilities_of(resolved.provider, resolved.model_key)
         messages = build_messages(
             path,
-            system_prompt=system_prompt,
+            system_prompt=chat_system_prompt or system_prompt,
             context_window=capabilities.context_window if capabilities else None,
         )
 
