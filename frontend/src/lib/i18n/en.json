@@ -87,6 +87,8 @@
   "systemPrompt.title": "System prompt",
   "systemPrompt.intro": "Applies to this conversation only, on every message. A new conversation starts without one.",
   "systemPrompt.placeholder": "e.g. You are a concise assistant. Answer in Italian.",
+  "systemPrompt.set": "Active in this conversation",
+  "systemPrompt.unset": "None set",
   "systemPrompt.save": "Save",
   "systemPrompt.clear": "Clear",
   "systemPrompt.saved": "Saved",

@@ -6,6 +6,13 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-08
+
+### Changed
+
+- The header's "System prompt" button now shows when the conversation has one: bold
+  with an accent dot and a tooltip, and the panel states whether one is set.
+
 ## [0.1.7] - 2026-10-08
 
 A conversation can carry its own system prompt.

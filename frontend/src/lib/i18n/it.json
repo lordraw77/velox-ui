@@ -86,6 +86,8 @@
   "systemPrompt.title": "System prompt",
   "systemPrompt.intro": "Vale solo per questa conversazione, a ogni messaggio. Una nuova conversazione parte senza.",
   "systemPrompt.placeholder": "es. Sei un assistente conciso. Rispondi in italiano.",
+  "systemPrompt.set": "Attivo in questa conversazione",
+  "systemPrompt.unset": "Nessuno impostato",
   "systemPrompt.save": "Salva",
   "systemPrompt.clear": "Svuota",
   "systemPrompt.saved": "Salvato",

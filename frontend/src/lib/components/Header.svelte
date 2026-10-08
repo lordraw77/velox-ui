@@ -9,6 +9,7 @@
   import type { HealthState } from "$lib/api/types";
   import { api } from "$lib/api/client";
   import { app } from "$lib/stores/app.svelte";
+  import { conversation } from "$lib/stores/conversation.svelte";
   import type { Locale } from "$lib/i18n";
   import { LOCALES } from "$lib/i18n";
   import ModelPicker from "./ModelPicker.svelte";
@@ -106,12 +107,15 @@
     <button
       class="btn btn-ghost"
       class:open={app.systemPromptOpen}
+      class:active={conversation.systemPrompt.trim() !== ""}
+      title={conversation.systemPrompt.trim() ? app.t("systemPrompt.set") : app.t("systemPrompt.unset")}
       onclick={() => (app.systemPromptOpen = !app.systemPromptOpen)}
       aria-pressed={app.systemPromptOpen}
       type="button"
       data-testid="system-prompt-toggle"
     >
       {app.t("systemPrompt.title")}
+      {#if conversation.systemPrompt.trim()}<span class="dot" aria-hidden="true"></span>{/if}
     </button>
 
     {#if app.model}
@@ -211,6 +215,21 @@
 
   .open {
     background: var(--bg-active);
+  }
+
+  .active {
+    color: var(--accent, inherit);
+    font-weight: 600;
+  }
+
+  .dot {
+    display: inline-block;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin-left: 0.35rem;
+    vertical-align: middle;
+    border-radius: 50%;
+    background: var(--accent, currentColor);
   }
 
   .health {

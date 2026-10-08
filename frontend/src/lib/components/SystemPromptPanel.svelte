@@ -38,6 +38,9 @@
   <div class="head">
     <div>
       <strong>{app.t("systemPrompt.title")}</strong>
+      <span class="state" class:on={conversation.systemPrompt.trim() !== ""} data-testid="system-prompt-state">
+        {conversation.systemPrompt.trim() ? app.t("systemPrompt.set") : app.t("systemPrompt.unset")}
+      </span>
       <p class="hint">{app.t("systemPrompt.intro")}</p>
     </div>
     <button class="btn btn-ghost btn-icon" onclick={() => (app.systemPromptOpen = false)} aria-label={app.t("systemPrompt.close")} title={app.t("systemPrompt.close")} type="button">×</button>
@@ -91,6 +94,16 @@
     font-family: var(--font-mono);
     font-size: 0.85rem;
     resize: vertical;
+  }
+
+  .state {
+    margin-left: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  .state.on {
+    color: var(--ok);
   }
 
   .actions {
