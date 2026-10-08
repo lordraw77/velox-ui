@@ -174,7 +174,7 @@ class ChatRepository:
         self, *, user_id: str, archived: bool, folder_id: str | None, tag_id: str | None
     ) -> Select[Any]:
         """Build the base listing query, matching ``ix_chat_list`` column for column."""
-        stmt = (
+        stmt: Select[Any] = (
             select(*_SUMMARY_COLUMNS)
             .where(
                 Chat.user_id == user_id,
