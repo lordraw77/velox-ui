@@ -6,6 +6,12 @@ aspirational.
 
 ## [Unreleased]
 
+### Added
+
+- Export a conversation from the header, as Markdown (`.md` download) or PDF
+  (through the browser's print dialog, "Save as PDF"). The whole active branch is
+  exported, including pages not yet loaded, with the system prompt at the top.
+
 ## [0.1.8] - 2026-10-08
 
 ### Changed

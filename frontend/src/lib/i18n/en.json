@@ -373,5 +373,12 @@
   "chat.toolFailed": "Failed",
   "chat.approvalRequired": "Approve the call to \"{name}\"?",
   "chat.approve": "Approve",
-  "chat.reject": "Reject"
+  "chat.reject": "Reject",
+  "export.title": "Export",
+  "export.working": "Exporting…",
+  "export.markdown": "Markdown (.md)",
+  "export.pdf": "PDF",
+  "export.user": "User",
+  "export.assistant": "Assistant",
+  "export.exportedAt": "Exported"
 }

@@ -61,11 +61,37 @@
     unknown: "providers.unknown",
   };
 
+  let exportOpen = $state(false);
+  let exporting = $state(false);
+
+  async function exportAs(format: "md" | "pdf"): Promise<void> {
+    exportOpen = false;
+    exporting = true;
+    try {
+      // Loaded on first use: nobody should pay for exporting on startup.
+      const { exportConversation } = await import("$lib/export/conversation");
+      await exportConversation(format);
+    } catch (error) {
+      app.report(error);
+    } finally {
+      exporting = false;
+    }
+  }
+
   function cycleTheme(): void {
     const index = THEMES.indexOf(app.theme);
     app.setTheme(THEMES[(index + 1) % THEMES.length]!);
   }
 </script>
+
+<svelte:window
+  onclick={(event) => {
+    if (exportOpen && !(event.target as Element).closest(".export")) exportOpen = false;
+  }}
+  onkeydown={(event) => {
+    if (event.key === "Escape") exportOpen = false;
+  }}
+/>
 
 <header>
   <button
@@ -117,6 +143,33 @@
       {app.t("systemPrompt.title")}
       {#if conversation.systemPrompt.trim()}<span class="dot" aria-hidden="true"></span>{/if}
     </button>
+
+    {#if conversation.id && !conversation.isEmpty}
+      <div class="export">
+        <button
+          class="btn btn-ghost"
+          class:open={exportOpen}
+          onclick={() => (exportOpen = !exportOpen)}
+          aria-haspopup="menu"
+          aria-expanded={exportOpen}
+          disabled={exporting || conversation.streaming}
+          type="button"
+          data-testid="export-toggle"
+        >
+          {exporting ? app.t("export.working") : app.t("export.title")}
+        </button>
+        {#if exportOpen}
+          <div class="export-menu" role="menu">
+            <button class="btn btn-ghost" role="menuitem" type="button" onclick={() => exportAs("md")}>
+              {app.t("export.markdown")}
+            </button>
+            <button class="btn btn-ghost" role="menuitem" type="button" onclick={() => exportAs("pdf")}>
+              {app.t("export.pdf")}
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     {#if app.model}
       <button
@@ -220,6 +273,30 @@
   .active {
     color: var(--accent, inherit);
     font-weight: 600;
+  }
+
+  .export {
+    position: relative;
+  }
+
+  .export-menu {
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    right: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 9rem;
+    padding: 0.25rem;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.15);
+  }
+
+  .export-menu .btn {
+    justify-content: flex-start;
+    text-align: left;
   }
 
   .dot {

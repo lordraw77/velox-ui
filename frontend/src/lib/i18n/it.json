@@ -361,5 +361,12 @@
   "chat.toolFailed": "Fallita",
   "chat.approvalRequired": "Approvare la chiamata a \"{name}\"?",
   "chat.approve": "Approva",
-  "chat.reject": "Rifiuta"
+  "chat.reject": "Rifiuta",
+  "export.title": "Esporta",
+  "export.working": "Esportazione…",
+  "export.markdown": "Markdown (.md)",
+  "export.pdf": "PDF",
+  "export.user": "Utente",
+  "export.assistant": "Assistente",
+  "export.exportedAt": "Esportato il"
 }
