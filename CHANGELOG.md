@@ -6,6 +6,8 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-11
+
 ### Added
 
 - Export a conversation from the header, as Markdown (`.md` download) or PDF
