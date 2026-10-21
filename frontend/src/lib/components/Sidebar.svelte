@@ -105,6 +105,39 @@
     void app.patchChat(id, { pinned: !pinned });
   }
 
+  let renamingId: string | null = $state(null);
+  let renameDraft = $state("");
+
+  function startRename(id: string, title: string, event: MouseEvent): void {
+    event.stopPropagation();
+    renamingId = id;
+    renameDraft = title;
+  }
+
+  function commitRename(): void {
+    const id = renamingId;
+    if (id === null) return;
+    renamingId = null;
+    const title = renameDraft.trim();
+    const current = app.chats.find((chat) => chat.id === id);
+    if (!title || !current || title === current.title) return;
+    void app.patchChat(id, { title });
+  }
+
+  function onRenameKey(event: KeyboardEvent): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRename();
+    } else if (event.key === "Escape") {
+      renamingId = null;
+    }
+  }
+
+  function focusSelect(node: HTMLInputElement): void {
+    node.focus();
+    node.select();
+  }
+
   function archive(id: string, event: MouseEvent): void {
     event.stopPropagation();
     void app.patchChat(id, { archived: true });
@@ -253,9 +286,31 @@
         >
           {chat.pinned ? "★" : "☆"}
         </button>
-        <button class="title" onclick={() => onselect(chat.id)} type="button">
-          {chat.title}
-        </button>
+        {#if renamingId === chat.id}
+          <input
+            class="rename"
+            bind:value={renameDraft}
+            onkeydown={onRenameKey}
+            onblur={commitRename}
+            maxlength="200"
+            aria-label={app.t("chat.rename")}
+            use:focusSelect
+          />
+        {:else}
+          <button class="title" onclick={() => onselect(chat.id)} type="button">
+            {chat.title}
+          </button>
+          <button
+            class="btn btn-ghost btn-icon action"
+            onclick={(event) => startRename(chat.id, chat.title, event)}
+            title={app.t("chat.rename")}
+            aria-label={app.t("chat.rename")}
+            type="button"
+            data-testid="rename-chat"
+          >
+            ✎
+          </button>
+        {/if}
         {#if app.chatsArchived}
           <button
             class="btn btn-ghost btn-icon action"
@@ -443,6 +498,16 @@
     text-align: left;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .rename {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.86rem;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
   }
 
   .pin {

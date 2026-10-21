@@ -6,6 +6,13 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-21
+
+### Added
+
+- Rename a conversation from the list: a pencil icon on each row turns the title
+  into an editable field (Enter or click away saves, Esc cancels).
+
 ## [0.2.0] - 2026-10-21
 
 ### Fixed

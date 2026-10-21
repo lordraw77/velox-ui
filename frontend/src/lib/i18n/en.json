@@ -37,6 +37,7 @@
   "chat.assistant": "Assistant",
   "chat.branch": "Branch {current} of {total}",
   "chat.reasoning": "Reasoning",
+  "chat.rename": "Rename",
   "chat.pin": "Pin",
   "chat.unpin": "Unpin",
   "chat.archive": "Archive",
