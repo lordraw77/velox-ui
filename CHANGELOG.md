@@ -6,6 +6,8 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-21
+
 ### Added
 
 - Re-run and Copy MD buttons under each assistant reply. Re-run sends the same prompt
