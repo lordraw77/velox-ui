@@ -25,6 +25,9 @@ export function trackVisualViewport(): () => void {
       "--viewport-height",
       `${viewport.height}px`,
     );
+    // iOS pans the layout viewport when the keyboard opens; pin it back so the
+    // document never ends up scrolled under the fixed-height shell.
+    if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
   };
 
   apply();

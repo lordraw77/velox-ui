@@ -6,6 +6,16 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-21
+
+### Fixed
+
+- Page scrolling on iPhone and iPad. The document itself no longer scrolls or
+  rubber-bands behind the app, the message list scrolls vertically only with
+  native momentum, and scroll corrections from re-measured messages are held
+  back until the finger is lifted instead of cancelling the gesture.
+- Opening the on-screen keyboard on iOS no longer leaves the page scrolled.
+
 ## [0.1.11] - 2026-10-21
 
 ### Added

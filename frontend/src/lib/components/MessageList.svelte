@@ -44,6 +44,9 @@
   let viewportHeight = $state(0);
   let scrollTop = $state(0);
   let anchored = $state(true);
+  /** Finger down on the list. Writing `scrollTop` mid-gesture kills iOS momentum. */
+  let touching = false;
+  let deferredShift = 0;
 
   /**
    * Bumped whenever a measurement changes the layout.
@@ -123,7 +126,7 @@
     void streaming;
     if (!anchored || !viewport) return;
     queueMicrotask(() => {
-      if (!viewport || !anchored) return;
+      if (!viewport || !anchored || touching) return;
       viewport.scrollTop = list.bottomScrollTop(viewport.clientHeight);
     });
   });
@@ -145,8 +148,25 @@
     // Only a change above the viewport shifts what is on screen. A change below it
     // moves content the reader cannot see.
     if (list.offsetOf(index) < scrollTop) {
+      if (touching) {
+        deferredShift += delta;
+        return;
+      }
       viewport.scrollTop += delta;
       scrollTop = viewport.scrollTop;
+    }
+  }
+
+  function onTouchStart(): void {
+    touching = true;
+  }
+
+  function onTouchEnd(): void {
+    touching = false;
+    if (deferredShift !== 0 && viewport) {
+      viewport.scrollTop += deferredShift;
+      scrollTop = viewport.scrollTop;
+      deferredShift = 0;
     }
   }
 </script>
@@ -154,7 +174,13 @@
 {#if loadingOlder}
   <div class="older" role="status"><span class="spinner"></span></div>
 {/if}
-<div class="viewport" bind:this={viewport} onscroll={onScroll}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="viewport" bind:this={viewport}
+  onscroll={onScroll}
+  ontouchstart={onTouchStart}
+  ontouchend={onTouchEnd}
+  ontouchcancel={onTouchEnd}
+>
   <div class="content" style:height="{window_.totalHeight}px">
     <div class="window" style:transform="translateY({window_.offsetTop}px)">
       {#each visible as message, offset (message.id)}
@@ -179,6 +205,9 @@
     flex: 1;
     overflow-y: auto;
     overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    /* Vertical pans only; stops iOS from treating a diagonal drag as a page pan. */
+    touch-action: pan-y;
   }
 
   .content {

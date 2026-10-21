@@ -126,6 +126,10 @@ html,
 body {
   height: 100%;
   margin: 0;
+  /* The app scrolls inside its own panes. Without this, iOS rubber-bands and
+     scrolls the document itself when a pane hits its edge. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
