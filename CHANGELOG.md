@@ -6,6 +6,11 @@ aspirational.
 
 ## [Unreleased]
 
+### Added
+
+- Re-run and Copy MD buttons under each assistant reply. Re-run sends the same prompt
+  again as a new branch; Copy MD copies the reply's markdown source, not the rendered HTML.
+
 ## [0.1.9] - 2026-10-11
 
 ### Added

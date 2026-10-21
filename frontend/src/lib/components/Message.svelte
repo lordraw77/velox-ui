@@ -48,6 +48,19 @@
       approving = false;
     }
   }
+
+  let copied = $state(false);
+
+  /** The reply's markdown source as the model wrote it, not the rendered HTML. */
+  async function copyMarkdown(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch (error) {
+      app.report(error);
+    }
+  }
   let element: HTMLElement | undefined = $state();
 
   $effect(() => {
@@ -167,6 +180,22 @@
       tokensOut={message.tokens_out}
       costMicros={message.cost_micros}
     />
+  {/if}
+
+  {#if !isUser && message.content && !conversation.streaming}
+    <div class="actions">
+      <button
+        class="btn btn-ghost"
+        onclick={() => conversation.regenerate(message.id)}
+        type="button"
+        data-testid="regenerate"
+      >
+        {app.t("chat.regenerate")}
+      </button>
+      <button class="btn btn-ghost" onclick={copyMarkdown} type="button" data-testid="copy-markdown">
+        {copied ? app.t("chat.copiedMarkdown") : app.t("chat.copyMarkdown")}
+      </button>
+    </div>
   {/if}
 </article>
 
@@ -289,6 +318,13 @@
   .speak {
     margin-left: auto;
     font-size: 0.9rem;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
   }
 
   .approval {

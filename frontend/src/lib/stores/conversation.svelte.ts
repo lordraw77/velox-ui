@@ -314,6 +314,20 @@ class ConversationStore {
   }
 
   /**
+   * Run the turn that produced an assistant reply again, as a new branch: the user's
+   * message is sent once more from the same parent, so the old reply stays reachable.
+   */
+  async regenerate(messageId: string): Promise<void> {
+    if (this.streaming) return;
+    const reply = this.messages.find((entry) => entry.id === messageId);
+    const prompt = reply?.parent_id
+      ? this.messages.find((entry) => entry.id === reply.parent_id)
+      : undefined;
+    if (!prompt || prompt.role !== "user" || prompt.id.startsWith("pending-")) return;
+    await this.send(prompt.content, prompt.parent_id);
+  }
+
+  /**
    * Read a turn's events into the conversation until it ends.
    *
    * Shared by a turn this client started and one it is picking back up, because the
