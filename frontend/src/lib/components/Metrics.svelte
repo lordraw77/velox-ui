@@ -7,6 +7,7 @@
   counters (`eval_count`, `eval_duration`, `prompt_eval_*`); nothing is inferred.
 -->
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { Timings } from "$lib/api/types";
   import { app } from "$lib/stores/app.svelte";
 
@@ -15,9 +16,11 @@
     tokensIn: number | null;
     tokensOut: number | null;
     costMicros: number | null;
+    /** Controls shown at the start of the line, before the numbers. */
+    children?: Snippet;
   }
 
-  let { timings, tokensIn, tokensOut, costMicros }: Props = $props();
+  let { timings, tokensIn, tokensOut, costMicros, children }: Props = $props();
 
   function ms(value: number | null | undefined): string {
     if (value === null || value === undefined) return "";
@@ -37,6 +40,7 @@
 </script>
 
 <div class="metrics">
+  {@render children?.()}
   {#if rate !== null}
     <span title={app.t("metrics.generation", { value: ms(timings?.eval_ms) })}>
       {app.t("metrics.tokensPerSecond", { value: rate.toFixed(1) })}
@@ -64,6 +68,10 @@
     font-family: var(--font-mono);
     font-size: 0.72rem;
     color: var(--text-faint);
+  }
+
+  .metrics {
+    align-items: center;
   }
 
   .free {

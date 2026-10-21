@@ -179,6 +179,22 @@ def test_regenerating_from_a_parent_creates_a_sibling(
     assert root_user_id
 
 
+def test_regenerating_the_first_turn_branches_from_the_root(
+    client: TestClient, registered: dict
+) -> None:
+    headers = {"Authorization": registered["header"]}
+    chat_id = _new_chat(client, headers)
+    _stream(client, chat_id, headers)
+    _stream(client, chat_id, headers, content="second")
+
+    # A null parent alone would continue the active leaf; `from_root` is the way to
+    # re-run the opening turn as a sibling of it.
+    _stream(client, chat_id, headers, content="hello", parent_id=None, from_root=True)
+    messages = client.get(f"/api/chats/{chat_id}", headers=headers).json()["messages"]
+    assert [message["depth"] for message in messages] == [0, 1]
+    assert messages[0]["sibling_count"] == 2
+
+
 def test_loading_state_is_reported_distinctly(client: TestClient, registered: dict) -> None:
     # "loading model" is not "generating" and is not "stuck" (ADR-0008).
     headers = {"Authorization": registered["header"]}

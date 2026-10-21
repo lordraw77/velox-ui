@@ -496,6 +496,7 @@ class ChatService:
         content: str,
         model_ref: str,
         parent_id: str | None = None,
+        from_root: bool = False,
         params: SamplingParams | None = None,
         system_prompt: str | None = None,
         knowledge_ids: Sequence[str] = (),
@@ -511,6 +512,8 @@ class ChatService:
             model_ref: ``"provider_id:model_key"``.
             parent_id: Branch point. Defaults to the conversation's active leaf, which
                 is the ordinary "continue the conversation" case.
+            from_root: Start a new branch at the root turn, with no history, instead of
+                defaulting to the active leaf when ``parent_id`` is ``None``.
             params: Per-turn sampling overrides.
             system_prompt: System message for this turn. Used only when the
                 conversation has none of its own: the one saved on the chat
@@ -548,9 +551,13 @@ class ChatService:
             chat = await repository.get(chat_id, user_id=user_id)
             if chat is None:
                 raise NotFoundError("No such conversation.")
-            branch_from = parent_id or chat.active_leaf_id
+            branch_from = None if from_root else parent_id or chat.active_leaf_id
             chat_system_prompt = chat.system_prompt
-            path = await repository.load_active_path(chat_id, leaf_id=branch_from)
+            path = (
+                []
+                if from_root
+                else await repository.load_active_path(chat_id, leaf_id=branch_from)
+            )
 
         capabilities = await self._capabilities_of(resolved.provider, resolved.model_key)
         messages = build_messages(

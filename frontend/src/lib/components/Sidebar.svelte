@@ -41,6 +41,53 @@
 
   let { onselect, onnavigate, current, inert = false, onclose }: Props = $props();
 
+  let selecting = $state(false);
+  let selected = $state<string[]>([]);
+  let busy = $state(false);
+
+  let allSelected = $derived(app.chats.length > 0 && selected.length === app.chats.length);
+
+  function toggleSelecting(): void {
+    selecting = !selecting;
+    selected = [];
+  }
+
+  function toggleSelected(id: string): void {
+    selected = selected.includes(id) ? selected.filter((entry) => entry !== id) : [...selected, id];
+  }
+
+  /** Selects what is loaded in the list; chats further down the scroll are not included. */
+  function toggleAll(): void {
+    selected = allSelected ? [] : app.chats.map((chat) => chat.id);
+  }
+
+  /** Apply one request per selected chat; those that succeed leave the list, failures stay selected. */
+  async function applyToSelected(
+    action: (id: string) => Promise<unknown>,
+  ): Promise<void> {
+    if (busy || selected.length === 0) return;
+    busy = true;
+    const ids = [...selected];
+    const results = await Promise.allSettled(ids.map(action));
+    const done = ids.filter((_, index) => results[index]?.status === "fulfilled");
+    const failed = results.find((result) => result.status === "rejected");
+    app.chats = app.chats.filter((chat) => !done.includes(chat.id));
+    selected = selected.filter((id) => !done.includes(id));
+    if (conversation.id && done.includes(conversation.id)) onselect(null);
+    if (failed?.status === "rejected") app.report(failed.reason);
+    busy = false;
+  }
+
+  function archiveSelected(): Promise<void> {
+    return applyToSelected((id) => api.updateChat(id, { archived: !app.chatsArchived }));
+  }
+
+  async function deleteSelected(): Promise<void> {
+    if (selected.length === 0) return;
+    if (!confirm(app.t("chat.deleteSelectedConfirm", { count: selected.length }))) return;
+    await applyToSelected((id) => api.deleteChat(id));
+  }
+
   async function remove(id: string, event: MouseEvent): Promise<void> {
     event.stopPropagation();
     if (!confirm(app.t("chat.deleteConfirm"))) return;
@@ -163,6 +210,23 @@
     {app.chatsArchived ? app.t("chat.showActive") : app.t("chat.showArchived")}
   </button>
 
+  <div class="bulk">
+    <button class="btn btn-ghost" class:active={selecting} onclick={toggleSelecting} type="button" data-testid="select-mode">
+      {selecting ? app.t("chat.selectDone") : app.t("chat.select")}
+    </button>
+    {#if selecting}
+      <button class="btn btn-ghost" onclick={toggleAll} type="button" data-testid="select-all">
+        {allSelected ? app.t("chat.selectNone") : app.t("chat.selectAll")}
+      </button>
+      <button class="btn btn-ghost" disabled={busy || selected.length === 0} onclick={archiveSelected} type="button" data-testid="archive-selected">
+        {app.chatsArchived ? app.t("chat.unarchiveSelected") : app.t("chat.archiveSelected")}
+      </button>
+      <button class="btn btn-ghost danger" disabled={busy || selected.length === 0} onclick={deleteSelected} type="button" data-testid="delete-selected">
+        {app.t("chat.deleteSelected")}
+      </button>
+    {/if}
+  </div>
+
   <nav onscroll={onListScroll}>
     {#if app.chats.length === 0 && !app.chatsLoading}
       <p class="hint empty">{app.t("chat.noChats")}</p>
@@ -170,6 +234,15 @@
 
     {#each app.chats as chat (chat.id)}
       <div class="row" class:active={conversation.id === chat.id}>
+        {#if selecting}
+          <input
+            class="check"
+            type="checkbox"
+            checked={selected.includes(chat.id)}
+            onchange={() => toggleSelected(chat.id)}
+            aria-label={chat.title}
+          />
+        {/if}
         <button
           class="btn btn-ghost btn-icon pin"
           class:pinned={chat.pinned}
@@ -313,6 +386,31 @@
 
   .shelf.active {
     background: var(--bg-active);
+  }
+
+  .bulk {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 0.4rem 0.75rem 0;
+  }
+
+  .bulk .btn {
+    flex: 1;
+    font-size: 0.78rem;
+  }
+
+  .bulk .active {
+    background: var(--bg-active);
+  }
+
+  .bulk .danger:not(:disabled) {
+    color: var(--danger);
+  }
+
+  .check {
+    flex: none;
+    margin: 0 0.1rem 0 0.4rem;
   }
 
   nav {

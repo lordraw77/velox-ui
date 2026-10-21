@@ -54,6 +54,9 @@ class CompletionRequest(msgspec.Struct):
     content: str
     model_ref: str
     parent_id: str | None = None
+    # A new branch from the very first turn: `parent_id` is null there, which on its
+    # own means "continue from the active leaf".
+    from_root: bool = False
     system_prompt: str | None = None
     params: SamplingParams = msgspec.field(default_factory=SamplingParams)
     knowledge_ids: tuple[str, ...] = ()
@@ -304,6 +307,7 @@ async def completions(
         content=body.content,
         model_ref=body.model_ref,
         parent_id=body.parent_id,
+        from_root=body.from_root,
         params=body.params,
         system_prompt=body.system_prompt,
         knowledge_ids=body.knowledge_ids,

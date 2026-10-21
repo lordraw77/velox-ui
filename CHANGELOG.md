@@ -6,6 +6,24 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-10-21
+
+### Added
+
+- Select mode in the conversation list: select all, archive selected and delete
+  selected. "Select all" covers the conversations currently loaded.
+
+### Changed
+
+- The Re-run and Copy MD buttons are now icons at the start of each reply's
+  telemetry line.
+
+### Fixed
+
+- Re-running the first message of a conversation branched from the end of the
+  conversation instead of from the start. The completion request takes a new
+  optional `from_root` field for this.
+
 ## [0.1.10] - 2026-10-21
 
 ### Added

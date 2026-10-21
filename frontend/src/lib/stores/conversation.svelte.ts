@@ -246,8 +246,9 @@ class ConversationStore {
    *
    * @param content - The user's text.
    * @param parentId - Branch point, for regenerating from an earlier turn.
+   * @param fromRoot - Branch from the first turn, where there is no parent to name.
    */
-  async send(content: string, parentId?: string | null): Promise<void> {
+  async send(content: string, parentId?: string | null, fromRoot = false): Promise<void> {
     const modelRef = app.modelRef;
     if (!modelRef || this.streaming) return;
 
@@ -296,6 +297,7 @@ class ConversationStore {
           content,
           model_ref: modelRef,
           parent_id: parentId ?? null,
+          from_root: fromRoot || undefined,
           params: startingModel?.params ?? undefined,
           knowledge_ids: startingModel?.knowledgeIds ?? undefined,
           tool_server_ids: startingModel?.toolServerIds ?? undefined,
@@ -324,7 +326,7 @@ class ConversationStore {
       ? this.messages.find((entry) => entry.id === reply.parent_id)
       : undefined;
     if (!prompt || prompt.role !== "user" || prompt.id.startsWith("pending-")) return;
-    await this.send(prompt.content, prompt.parent_id);
+    await this.send(prompt.content, prompt.parent_id, prompt.parent_id === null);
   }
 
   /**

@@ -173,29 +173,50 @@
     </details>
   {/if}
 
-  {#if !isUser && message.timings}
+  {#if !isUser && (message.timings || (message.content && !conversation.streaming))}
     <Metrics
       timings={message.timings}
       tokensIn={message.tokens_in}
       tokensOut={message.tokens_out}
       costMicros={message.cost_micros}
-    />
-  {/if}
-
-  {#if !isUser && message.content && !conversation.streaming}
-    <div class="actions">
-      <button
-        class="btn btn-ghost"
-        onclick={() => conversation.regenerate(message.id)}
-        type="button"
-        data-testid="regenerate"
-      >
-        {app.t("chat.regenerate")}
-      </button>
-      <button class="btn btn-ghost" onclick={copyMarkdown} type="button" data-testid="copy-markdown">
-        {copied ? app.t("chat.copiedMarkdown") : app.t("chat.copyMarkdown")}
-      </button>
-    </div>
+    >
+      {#if message.content && !conversation.streaming}
+        <span class="actions">
+          <button
+            class="icon"
+            onclick={() => conversation.regenerate(message.id)}
+            title={app.t("chat.regenerate")}
+            aria-label={app.t("chat.regenerate")}
+            type="button"
+            data-testid="regenerate"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-3-6.7" />
+              <path d="M21 3v6h-6" />
+            </svg>
+          </button>
+          <button
+            class="icon"
+            onclick={copyMarkdown}
+            title={copied ? app.t("chat.copiedMarkdown") : app.t("chat.copyMarkdown")}
+            aria-label={app.t("chat.copyMarkdown")}
+            type="button"
+            data-testid="copy-markdown"
+          >
+            {#if copied}
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            {:else}
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="12" height="12" rx="2" />
+                <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+              </svg>
+            {/if}
+          </button>
+        </span>
+      {/if}
+    </Metrics>
   {/if}
 </article>
 
@@ -321,10 +342,23 @@
   }
 
   .actions {
-    display: flex;
-    gap: 0.4rem;
-    margin-top: 0.3rem;
-    font-size: 0.78rem;
+    display: inline-flex;
+    gap: 0.15rem;
+  }
+
+  .icon {
+    display: inline-flex;
+    padding: 0.2rem;
+    color: inherit;
+    cursor: pointer;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+  }
+
+  .icon:hover {
+    color: var(--text);
+    background: var(--bg-sunken);
   }
 
   .approval {
