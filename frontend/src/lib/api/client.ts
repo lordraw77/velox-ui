@@ -205,6 +205,15 @@ export class ApiClient {
     return this.request(`/api/models${refresh ? "?refresh=true" : ""}`);
   }
 
+  /** The caller's starred `model_ref` values. */
+  favoriteModels(): Promise<{ model_refs: string[] }> {
+    return this.request("/api/favorite-models");
+  }
+
+  setFavoriteModel(modelRef: string, favorite: boolean): Promise<{ model_refs: string[] }> {
+    return this.#json("PUT", "/api/favorite-models", { model_ref: modelRef, favorite });
+  }
+
   providers(): Promise<{ providers: ProviderInfo[] }> {
     return this.request("/api/providers");
   }

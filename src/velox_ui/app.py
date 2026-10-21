@@ -33,6 +33,7 @@ from velox_ui.api.routes import (
     auth,
     chats,
     custom_models,
+    favorite_models,
     folders,
     images,
     local_models,
@@ -112,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(apikeys.router)
     app.include_router(chats.router)
     app.include_router(models.router)
+    app.include_router(favorite_models.router)
     app.include_router(providers.router)
     app.include_router(local_models.router)
     app.include_router(local_models.jobs_router)

@@ -26,9 +26,13 @@ import { detectLocale, translate, type Locale } from "$lib/i18n";
 
 export type Theme = "light" | "dark" | "auto";
 
+/** Which models the picker lists: everything (favorites first) or only the favorites. */
+export type ModelView = "all" | "favorites";
+
 const STORAGE_KEYS = {
   session: "velox.session",
   model: "velox.model",
+  modelView: "velox.modelView",
   theme: "velox.theme",
   locale: "velox.locale",
 } as const;
@@ -59,6 +63,8 @@ class AppStore {
   providers = $state<ProviderGroup[]>([]);
   modelRef = $state<string | null>(null);
   modelsLoading = $state(false);
+  favoriteRefs = $state<string[]>([]);
+  modelView = $state<ModelView>("all");
 
   chats = $state<ChatSummary[]>([]);
   chatsCursor = $state<string | null>(null);
@@ -85,6 +91,12 @@ class AppStore {
   /** Every model across every provider, local first. */
   get models(): ModelEntry[] {
     return this.providers.flatMap((group) => group.models);
+  }
+
+  /** Starred models that are currently offered, in the order they were starred. */
+  get favoriteModels(): ModelEntry[] {
+    const byRef = new Map(this.models.map((entry) => [entry.model_ref, entry]));
+    return this.favoriteRefs.flatMap((ref) => byRef.get(ref) ?? []);
   }
 
   get model(): ModelEntry | null {
@@ -131,6 +143,7 @@ class AppStore {
   async boot(): Promise<void> {
     this.locale = (readStored(STORAGE_KEYS.locale) as Locale | null) ?? detectLocale();
     this.setTheme((readStored(STORAGE_KEYS.theme) as Theme | null) ?? "auto");
+    this.modelView = readStored(STORAGE_KEYS.modelView) === "favorites" ? "favorites" : "all";
 
     const stored = readStored(STORAGE_KEYS.session);
     if (stored) {
@@ -166,6 +179,7 @@ class AppStore {
     // round trips with no benefit.
     await Promise.all([
       this.loadModels(),
+      this.loadFavoriteModels(),
       this.loadChats(true),
       this.loadFolders(),
       this.loadTags(),
@@ -215,6 +229,34 @@ class AppStore {
     } finally {
       this.modelsLoading = false;
     }
+  }
+
+  async loadFavoriteModels(): Promise<void> {
+    try {
+      this.favoriteRefs = (await api.favoriteModels()).model_refs;
+    } catch (error) {
+      this.report(error);
+    }
+  }
+
+  /** Star or un-star a model. Applied at once and rolled back if the server refuses. */
+  async toggleFavoriteModel(modelRef: string): Promise<void> {
+    const before = this.favoriteRefs;
+    const favorite = !before.includes(modelRef);
+    this.favoriteRefs = favorite
+      ? [...before, modelRef]
+      : before.filter((ref) => ref !== modelRef);
+    try {
+      this.favoriteRefs = (await api.setFavoriteModel(modelRef, favorite)).model_refs;
+    } catch (error) {
+      this.favoriteRefs = before;
+      this.report(error);
+    }
+  }
+
+  setModelView(view: ModelView): void {
+    this.modelView = view;
+    writeStored(STORAGE_KEYS.modelView, view);
   }
 
   selectModel(modelRef: string): void {
@@ -313,6 +355,7 @@ class AppStore {
     writeStored(STORAGE_KEYS.session, null);
     this.chats = [];
     this.providers = [];
+    this.favoriteRefs = [];
     this.folders = [];
     this.tags = [];
   }

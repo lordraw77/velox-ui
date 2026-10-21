@@ -6,6 +6,17 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
+### Added
+
+- Favorite models, stored per user on the server (new `favorite_model` table,
+  `GET`/`PUT /api/favorite-models`).
+- A star menu next to the model picker to mark favorites, with search.
+- An All / Favorites switch next to the picker. "All" lists the favorites as the
+  first group, then every provider; "Favorites" lists only the favorites, keeping
+  the current model selectable. The choice is remembered in the browser.
+
 ## [0.2.1] - 2026-10-21
 
 ### Added

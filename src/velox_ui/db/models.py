@@ -32,6 +32,7 @@ __all__ = [
     "Collection",
     "CustomModel",
     "Document",
+    "FavoriteModel",
     "File",
     "Folder",
     "McpServer",
@@ -229,6 +230,22 @@ class ModelParams(Base):
     model_ref: Mapped[str] = mapped_column(String(255), primary_key=True)
     params: Mapped[Json]
     updated_at: Mapped[Timestamp]
+
+
+class FavoriteModel(Base):
+    """A model a user has starred.
+
+    Keyed by ``model_ref`` like :class:`ModelParams`: the model may come from a provider
+    that has no row, and a reference to one that has disappeared is harmless.
+    """
+
+    __tablename__ = "favorite_model"
+
+    user_id: Mapped[UlidRef] = mapped_column(
+        ForeignKey("app_user.id", ondelete="CASCADE"), primary_key=True
+    )
+    model_ref: Mapped[str] = mapped_column(String(255), primary_key=True)
+    created_at: Mapped[Timestamp]
 
 
 class Setting(Base):

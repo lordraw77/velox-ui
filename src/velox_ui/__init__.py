@@ -5,6 +5,6 @@ but metadata. Keeping it free of side effects and heavy imports is what makes th
 sub-second cold start achievable (see ADR-0001 and docs/design/01-repo-layout.md).
 """
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = ["__version__"]
