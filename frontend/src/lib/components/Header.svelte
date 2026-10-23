@@ -64,7 +64,7 @@
   let exportOpen = $state(false);
   let exporting = $state(false);
 
-  async function exportAs(format: "md" | "pdf"): Promise<void> {
+  async function exportAs(format: "md" | "pdf" | "pdf-sections"): Promise<void> {
     exportOpen = false;
     exporting = true;
     try {
@@ -96,9 +96,10 @@
 <header>
   <button
     class="btn btn-ghost btn-icon menu"
+    class:show={app.sidebarCollapsed}
     onclick={() => onmenu?.()}
-    aria-label={app.t("nav.openMenu")}
-    title={app.t("nav.openMenu")}
+    aria-label={app.t(app.sidebarCollapsed ? "nav.expandSidebar" : "nav.openMenu")}
+    title={app.t(app.sidebarCollapsed ? "nav.expandSidebar" : "nav.openMenu")}
     type="button"
     data-testid="nav-menu"
   >
@@ -165,6 +166,9 @@
             </button>
             <button class="btn btn-ghost" role="menuitem" type="button" onclick={() => exportAs("pdf")}>
               {app.t("export.pdf")}
+            </button>
+            <button class="btn btn-ghost" role="menuitem" type="button" onclick={() => exportAs("pdf-sections")}>
+              {app.t("export.pdfSections")}
             </button>
           </div>
         {/if}
@@ -237,6 +241,11 @@
   .menu,
   .health-summary {
     display: none;
+  }
+
+  /* On the desktop layout the menu button only appears once the sidebar is folded away. */
+  .menu.show {
+    display: inline-flex;
   }
 
   @media (width <= 900px) {

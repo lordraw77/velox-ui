@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "$lib/api/types";
-import { fileName, toMarkdown, toPrintHtml, type ExportChat, type ExportLabels } from "./document";
+import { fileName, toMarkdown, toAnswerSections, type ExportChat, type ExportLabels } from "./document";
 
 const LABELS: ExportLabels = {
   user: "User",
@@ -64,19 +64,12 @@ describe("toMarkdown", () => {
   });
 });
 
-describe("toPrintHtml", () => {
-  const html = toPrintHtml(CHAT, LABELS, new Map([["a1", "<p><strong>Yes</strong></p>"]]), "/p.css");
-
-  it("escapes everything the person or the title supplied", () => {
-    expect(html).toContain("<title>Tea &lt;time&gt;</title>");
-    expect(html).toContain("Is &lt;b&gt;green&lt;/b&gt; tea hot?");
-    expect(html).not.toContain("<b>green</b>");
-  });
-
-  it("uses the rendered HTML for assistant replies and links the stylesheet", () => {
-    expect(html).toContain('<div class="md"><p><strong>Yes</strong></p></div>');
-    expect(html).toContain('<link rel="stylesheet" href="/p.css">');
-    expect(html).not.toContain("ignored");
+describe("toAnswerSections", () => {
+  it("makes one document per assistant reply, quoting its question", () => {
+    const sections = toAnswerSections(CHAT, LABELS);
+    expect(sections.length).toBe(CHAT.messages.filter((m) => m.role === "assistant" && m.content.trim()).length);
+    expect(sections[0]?.index).toBe(1);
+    expect(sections[0]?.markdown).toContain("## User\n\n> ");
   });
 });
 

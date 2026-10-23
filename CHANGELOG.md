@@ -6,6 +6,27 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-23
+
+### Added
+
+- Download a reply as a PDF: a button next to regenerate and copy converts the
+  reply's Markdown straight to a text PDF (pdfmake, loaded on first use) — no
+  browser print dialog.
+- Export menu: "PDF (whole chat)" and "PDF per reply (.zip)", which makes one PDF
+  per assistant reply, each with the question it answers, bundled in a ZIP.
+- The sidebar can be folded away to the left (desktop), and its navigation block
+  (Search, Models, …) can be folded down. Both states are remembered.
+
+### Changed
+
+- The export menu's PDF no longer goes through the browser's print dialog; the
+  print stylesheet is gone.
+
+### Fixed
+
+- Pinned conversations stay at the top of the list after a chat is used or pinned.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

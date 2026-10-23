@@ -1,5 +1,5 @@
 /**
- * A conversation as a document: Markdown to download, HTML to print.
+ * A conversation as a document: Markdown to download, PDF to build from it.
  *
  * Pure functions, no DOM and no store, so both formats are tested in node. What a
  * reader of the exported file wants is the exchange itself — the system prompt, then
@@ -8,7 +8,6 @@
  */
 
 import type { Message } from "$lib/api/types";
-import { escapeHtml } from "$lib/markdown/sanitize";
 
 export interface ExportLabels {
   user: string;
@@ -57,45 +56,31 @@ function quote(text: string): string {
     .join("\n");
 }
 
+/** One assistant reply as a document of its own, with the question it answers. */
+export interface AnswerSection {
+  /** The reply's number among the conversation's replies, from 1. */
+  index: number;
+  markdown: string;
+}
+
 /**
- * Render the conversation as a standalone HTML page for printing.
- *
- * @param rendered - Safe HTML of each assistant message, by id, from the markdown
- *   worker. User messages are shown as written, as they are on screen.
- * @param stylesheet - URL of the print stylesheet. The page inherits the
- *   application's CSP, which forbids inline `<style>`, so it must be a file.
+ * Split the conversation into one Markdown document per assistant reply. The
+ * question that prompted it is quoted on top, so each file reads on its own.
  */
-export function toPrintHtml(
-  chat: ExportChat,
-  labels: ExportLabels,
-  rendered: Map<string, string>,
-  stylesheet: string,
-): string {
-  const turns = exportableMessages(chat.messages).map((message) => {
-    const html = rendered.get(message.id);
-    const body =
-      message.role === "assistant" && html
-        ? `<div class="md">${html}</div>`
-        : `<p class="plain">${escapeHtml(message.content.trim())}</p>`;
-    return `<section class="turn ${message.role}"><h2>${escapeHtml(speaker(message, labels))}</h2>${body}</section>`;
-  });
-
-  const system = chat.systemPrompt.trim()
-    ? `<section class="turn system"><h2>${escapeHtml(labels.systemPrompt)}</h2><p class="plain">${escapeHtml(chat.systemPrompt.trim())}</p></section>`
-    : "";
-
-  return [
-    "<!doctype html>",
-    '<html><head><meta charset="utf-8">',
-    `<title>${escapeHtml(chat.title)}</title>`,
-    `<link rel="stylesheet" href="${escapeHtml(stylesheet)}">`,
-    "</head><body>",
-    `<header><h1>${escapeHtml(chat.title)}</h1>`,
-    `<p class="meta">${escapeHtml(labels.exportedAt)}: ${escapeHtml(chat.exportedAt)}</p></header>`,
-    system,
-    ...turns,
-    "</body></html>",
-  ].join("");
+export function toAnswerSections(chat: ExportChat, labels: ExportLabels): AnswerSection[] {
+  const sections: AnswerSection[] = [];
+  let question = "";
+  for (const message of exportableMessages(chat.messages)) {
+    if (message.role === "user") {
+      question = message.content.trim();
+      continue;
+    }
+    const parts = [`# ${chat.title}`];
+    if (question) parts.push(`## ${labels.user}`, quote(question));
+    parts.push(`## ${speaker(message, labels)}`, message.content.trim());
+    sections.push({ index: sections.length + 1, markdown: `${parts.join("\n\n")}\n` });
+  }
+  return sections;
 }
 
 /** A filesystem-safe file name from a conversation title. */

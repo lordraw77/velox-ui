@@ -1,24 +1,22 @@
 /**
  * Export the conversation on screen as Markdown or PDF.
  *
- * Loaded on demand from the header, so none of this — nor the print stylesheet —
+ * Loaded on demand from the header, so none of this
  * counts against the initial bundle.
  *
- * PDF goes through the browser's own print dialog ("Save as PDF") rather than a PDF
- * library: every browser already has a good one, and shipping a second costs
- * hundreds of kilobytes for a feature used now and then.
+ * PDF is converted from the Markdown source with pdfmake (see `pdf.ts`), loaded on
+ * first use: the whole conversation as one file, or one file per assistant reply
+ * bundled into a ZIP so the browser is not asked to allow dozens of downloads.
  */
 
 import { api } from "$lib/api/client";
 import type { Message } from "$lib/api/types";
 import { formatDate } from "$lib/format";
-import { markdown } from "$lib/markdown/client";
 import { app } from "$lib/stores/app.svelte";
 import { conversation } from "$lib/stores/conversation.svelte";
-import { fileName, toMarkdown, toPrintHtml, type ExportChat, type ExportLabels } from "./document";
-import stylesheet from "./print.css?url";
+import { fileName, toAnswerSections, toMarkdown, type ExportChat, type ExportLabels } from "./document";
 
-export type ExportFormat = "md" | "pdf";
+export type ExportFormat = "md" | "pdf" | "pdf-sections";
 
 export async function exportConversation(format: ExportFormat): Promise<void> {
   const chat = await collect();
@@ -31,9 +29,12 @@ export async function exportConversation(format: ExportFormat): Promise<void> {
   };
   if (format === "md") {
     download(toMarkdown(chat, labels), fileName(chat.title, "md"), "text/markdown;charset=utf-8");
+  } else if (format === "pdf") {
+    // Converted from the Markdown source, not printed: a real PDF file, no dialog.
+    const { downloadPdf } = await import("./pdf");
+    await downloadPdf(toMarkdown(chat, labels), chat.title);
   } else {
-    const rendered = await renderAssistantMessages(chat.messages);
-    print(toPrintHtml(chat, labels, rendered, new URL(stylesheet, location.href).href));
+    await downloadSections(chat, labels);
   }
 }
 
@@ -63,64 +64,28 @@ async function collect(): Promise<ExportChat | null> {
   };
 }
 
-/** Render assistant messages through the same worker the conversation uses. */
-async function renderAssistantMessages(messages: Message[]): Promise<Map<string, string>> {
-  const assistant = messages.filter((message) => message.role === "assistant" && message.content);
+/** One PDF per assistant reply, delivered together as a ZIP. */
+async function downloadSections(chat: ExportChat, labels: ExportLabels): Promise<void> {
+  const sections = toAnswerSections(chat, labels);
+  if (sections.length === 0) return;
+  const [{ buildPdfs }, { zip }] = await Promise.all([import("./pdf"), import("./zip")]);
+  const blobs = await buildPdfs(sections.map((section) => ({ source: section.markdown, title: chat.title })));
+  const width = String(sections.length).length;
   const entries = await Promise.all(
-    assistant.map(
-      (message) =>
-        new Promise<[string, string]>((resolve) => {
-          const key = `export:${message.id}`;
-          markdown.request(key, message.content, true, (html) => {
-            markdown.release(key);
-            // A lazy image in a hidden frame may never load, and would print blank.
-            resolve([message.id, html.replaceAll(' loading="lazy"', "")]);
-          });
-        }),
-    ),
+    sections.map(async (section, position) => ({
+      name: fileName(`${String(section.index).padStart(width, "0")} ${chat.title}`, "pdf"),
+      data: new Uint8Array(await blobs[position]!.arrayBuffer()),
+    })),
   );
-  return new Map(entries);
+  const archive = zip(entries);
+  download(archive, fileName(chat.title, "zip"));
 }
 
-function download(text: string, name: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+function download(content: string | Blob, name: string, type = "application/octet-stream"): void {
+  const url = URL.createObjectURL(typeof content === "string" ? new Blob([content], { type }) : content);
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-let frame: HTMLIFrameElement | null = null;
-
-/** Print an HTML document from a hidden frame, leaving the application untouched. */
-function print(html: string): void {
-  frame?.remove();
-  const current = document.createElement("iframe");
-  frame = current;
-  current.setAttribute("aria-hidden", "true");
-  current.tabIndex = -1;
-  Object.assign(current.style, {
-    position: "fixed",
-    width: "0",
-    height: "0",
-    border: "0",
-    visibility: "hidden",
-  });
-  current.addEventListener(
-    "load",
-    () => {
-      const view = current.contentWindow;
-      if (!view) return;
-      view.addEventListener("afterprint", () => {
-        current.remove();
-        if (frame === current) frame = null;
-      });
-      view.focus();
-      view.print();
-    },
-    { once: true },
-  );
-  current.srcdoc = html;
-  document.body.append(current);
 }

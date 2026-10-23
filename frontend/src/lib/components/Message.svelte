@@ -61,6 +61,22 @@
       app.report(error);
     }
   }
+  let downloading = $state(false);
+
+  /** Convert the reply's markdown source straight to a PDF file; loaded on first use. */
+  async function downloadPdf(): Promise<void> {
+    if (downloading) return;
+    downloading = true;
+    try {
+      const { downloadPdf } = await import("$lib/export/pdf");
+      await downloadPdf(message.content, conversation.title || app.t("chat.untitled"));
+    } catch (error) {
+      app.report(error);
+    } finally {
+      downloading = false;
+    }
+  }
+
   let element: HTMLElement | undefined = $state();
 
   $effect(() => {
@@ -213,6 +229,21 @@
                 <path d="M5 15V5a2 2 0 0 1 2-2h10" />
               </svg>
             {/if}
+          </button>
+          <button
+            class="icon"
+            onclick={downloadPdf}
+            disabled={downloading}
+            title={app.t("chat.downloadPdf")}
+            aria-label={app.t("chat.downloadPdf")}
+            type="button"
+            data-testid="download-pdf"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v12" />
+              <path d="m7 11 5 5 5-5" />
+              <path d="M5 21h14" />
+            </svg>
           </button>
         </span>
       {/if}

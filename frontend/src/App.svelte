@@ -118,6 +118,12 @@
     return () => query.removeEventListener("change", sync);
   });
 
+  /** Drawer layout opens the drawer; desktop layout unfolds the permanent sidebar. */
+  function openMenu(): void {
+    if (narrow) drawerOpen = true;
+    else app.setSidebarCollapsed(false);
+  }
+
   function closeDrawer(): void {
     drawerOpen = false;
   }
@@ -134,12 +140,12 @@
 {:else if !app.authenticated}
   <AuthGate />
 {:else}
-  <div class="shell" class:drawer-open={drawerOpen}>
+  <div class="shell" class:drawer-open={drawerOpen} class:collapsed={app.sidebarCollapsed}>
     <Sidebar
       onselect={select}
       onnavigate={navigate}
       current={view}
-      inert={narrow && !drawerOpen}
+      inert={narrow ? !drawerOpen : app.sidebarCollapsed}
       onclose={closeDrawer}
     />
 
@@ -154,7 +160,7 @@
     ></button>
 
     <main>
-      <Header onmenu={() => (drawerOpen = true)} />
+      <Header onmenu={openMenu} />
 
       {#if app.error}
         <ErrorBanner error={app.error} ondismiss={() => app.dismissError()} />
@@ -316,6 +322,13 @@
     max-width: var(--content-width);
     margin: 0 auto;
     padding: 0 var(--gutter);
+  }
+
+  /* Desktop: the sidebar is folded away entirely (it is `inert`, so not focusable). */
+  @media (width > 900px) {
+    .shell.collapsed :global(aside) {
+      display: none;
+    }
   }
 
   /* Inert on the desktop layout: no size, not focusable, nothing to click. */

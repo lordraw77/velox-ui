@@ -33,6 +33,8 @@ const STORAGE_KEYS = {
   session: "velox.session",
   model: "velox.model",
   modelView: "velox.modelView",
+  sidebarCollapsed: "velox.sidebarCollapsed",
+  navCollapsed: "velox.navCollapsed",
   theme: "velox.theme",
   locale: "velox.locale",
 } as const;
@@ -65,6 +67,10 @@ class AppStore {
   modelsLoading = $state(false);
   favoriteRefs = $state<string[]>([]);
   modelView = $state<ModelView>("all");
+  /** Desktop layout: the whole sidebar is folded away to the left. */
+  sidebarCollapsed = $state(false);
+  /** The navigation block (Search, Models, …) at the bottom of the sidebar is folded down. */
+  navCollapsed = $state(false);
 
   chats = $state<ChatSummary[]>([]);
   chatsCursor = $state<string | null>(null);
@@ -144,6 +150,8 @@ class AppStore {
     this.locale = (readStored(STORAGE_KEYS.locale) as Locale | null) ?? detectLocale();
     this.setTheme((readStored(STORAGE_KEYS.theme) as Theme | null) ?? "auto");
     this.modelView = readStored(STORAGE_KEYS.modelView) === "favorites" ? "favorites" : "all";
+    this.sidebarCollapsed = readStored(STORAGE_KEYS.sidebarCollapsed) === "1";
+    this.navCollapsed = readStored(STORAGE_KEYS.navCollapsed) === "1";
 
     const stored = readStored(STORAGE_KEYS.session);
     if (stored) {
@@ -254,6 +262,16 @@ class AppStore {
     }
   }
 
+  setSidebarCollapsed(collapsed: boolean): void {
+    this.sidebarCollapsed = collapsed;
+    writeStored(STORAGE_KEYS.sidebarCollapsed, collapsed ? "1" : null);
+  }
+
+  setNavCollapsed(collapsed: boolean): void {
+    this.navCollapsed = collapsed;
+    writeStored(STORAGE_KEYS.navCollapsed, collapsed ? "1" : null);
+  }
+
   setModelView(view: ModelView): void {
     this.modelView = view;
     writeStored(STORAGE_KEYS.modelView, view);
@@ -302,7 +320,11 @@ class AppStore {
     const chat = this.chats[index];
     if (!chat) return;
     const updated = { ...chat, updated_at: Date.now(), title: title ?? chat.title };
-    this.chats = [updated, ...this.chats.filter((entry) => entry.id !== id)];
+    const rest = this.chats.filter((entry) => entry.id !== id);
+    // Pinned chats stay ahead of everything else, as the server orders them.
+    const firstUnpinned = rest.findIndex((entry) => !entry.pinned);
+    const at = updated.pinned ? 0 : firstUnpinned === -1 ? rest.length : firstUnpinned;
+    this.chats = [...rest.slice(0, at), updated, ...rest.slice(at)];
   }
 
   /** Pin, archive or move a conversation, applying the server's response locally. */

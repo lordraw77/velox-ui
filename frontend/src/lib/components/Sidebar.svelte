@@ -45,6 +45,12 @@
   let selected = $state<string[]>([]);
   let busy = $state(false);
 
+  /** Pinned first, whatever order the list was patched into locally; stable within each group. */
+  let ordered = $derived([
+    ...app.chats.filter((chat) => chat.pinned),
+    ...app.chats.filter((chat) => !chat.pinned),
+  ]);
+
   let allSelected = $derived(app.chats.length > 0 && selected.length === app.chats.length);
 
   function toggleSelecting(): void {
@@ -200,6 +206,17 @@
     <button class="btn btn-primary new" onclick={() => onselect(null)} type="button">
       {app.t("chat.newChat")}
     </button>
+    <!-- Desktop-only: folds the whole sidebar away to the left. -->
+    <button
+      class="btn btn-ghost btn-icon collapse"
+      onclick={() => app.setSidebarCollapsed(true)}
+      aria-label={app.t("nav.collapseSidebar")}
+      title={app.t("nav.collapseSidebar")}
+      type="button"
+      data-testid="sidebar-collapse"
+    >
+      «
+    </button>
     <!-- Drawer-only: hidden above the breakpoint, where the sidebar is permanent. -->
     <button
       class="btn btn-ghost btn-icon close"
@@ -265,7 +282,7 @@
       <p class="hint empty">{app.t("chat.noChats")}</p>
     {/if}
 
-    {#each app.chats as chat (chat.id)}
+    {#each ordered as chat (chat.id)}
       <div class="row" class:active={conversation.id === chat.id}>
         {#if selecting}
           <input
@@ -349,7 +366,19 @@
     {/if}
   </nav>
 
-  <div class="foot">
+  <button
+    class="btn btn-ghost navtoggle"
+    onclick={() => app.setNavCollapsed(!app.navCollapsed)}
+    aria-expanded={!app.navCollapsed}
+    aria-label={app.t(app.navCollapsed ? "nav.expandNav" : "nav.collapseNav")}
+    title={app.t(app.navCollapsed ? "nav.expandNav" : "nav.collapseNav")}
+    type="button"
+    data-testid="nav-collapse"
+  >
+    {app.navCollapsed ? "▴" : "▾"}
+  </button>
+
+  <div class="foot" hidden={app.navCollapsed}>
     <button class="btn btn-ghost" class:active={current === "search"} onclick={() => onnavigate("search")} type="button" data-testid="nav-search">
       {app.t("nav.search")}
     </button>
@@ -408,6 +437,19 @@
      and the header still carries sign-out at desktop widths. */
   .close,
   .signout {
+    display: none;
+  }
+
+  .navtoggle {
+    flex: none;
+    padding: 0.1rem;
+    font-size: 0.8rem;
+    color: var(--text-faint);
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+  }
+
+  .foot[hidden] {
     display: none;
   }
 
@@ -554,6 +596,10 @@
   }
 
   @media (width <= 900px) {
+    .collapse {
+      display: none;
+    }
+
     .close {
       display: inline-flex;
       font-size: 1.2rem;
