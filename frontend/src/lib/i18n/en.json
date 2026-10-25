@@ -29,6 +29,7 @@
   "chat.placeholder": "Send a message…",
   "chat.placeholderNoModel": "Configure a model to start",
   "chat.empty": "No messages yet. Ask something.",
+  "chat.index": "Questions",
   "chat.emptyHint": "Your conversation stays on this machine.",
   "chat.noChats": "No conversations yet",
   "chat.delete": "Delete conversation",

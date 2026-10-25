@@ -28,6 +28,7 @@
   "chat.placeholder": "Scrivi un messaggio…",
   "chat.placeholderNoModel": "Configura un modello per iniziare",
   "chat.empty": "Ancora nessun messaggio. Chiedi qualcosa.",
+  "chat.index": "Domande",
   "chat.emptyHint": "La conversazione resta su questa macchina.",
   "chat.noChats": "Ancora nessuna conversazione",
   "chat.delete": "Elimina conversazione",

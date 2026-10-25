@@ -6,6 +6,13 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-25
+
+### Added
+
+- Question index: in a conversation with more than one question, a "Questions"
+  button above the messages lists them and jumps straight to the one you pick.
+
 ## [0.4.0] - 2026-10-23
 
 ### Added

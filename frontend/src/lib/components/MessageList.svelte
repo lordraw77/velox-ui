@@ -21,6 +21,7 @@
 <script lang="ts">
   import { VirtualList } from "$lib/virtual/list";
   import type { RenderedMessage } from "$lib/stores/conversation.svelte";
+  import { app } from "$lib/stores/app.svelte";
   import Message from "./Message.svelte";
 
   interface Props {
@@ -131,6 +132,33 @@
     });
   });
 
+  /**
+   * The reader's questions, as an index to jump through. Only loaded messages are
+   * listed; earlier pages join the index as they are fetched.
+   */
+  let questions = $derived(
+    messages.flatMap((message, index) =>
+      message.role === "user" ? [{ index, id: message.id, label: summarise(message.content) }] : [],
+    ),
+  );
+
+  let indexOpen = $state(false);
+
+  function summarise(content: string): string {
+    const line = content.trim().split("\n", 1)[0] ?? "";
+    return line.length > 90 ? `${line.slice(0, 90)}…` : line || "…";
+  }
+
+  function jumpTo(index: number): void {
+    indexOpen = false;
+    if (!viewport) return;
+    // Leaving the bottom must also drop anchoring, or the follow-the-end effect
+    // would pull the view straight back during a stream.
+    anchored = false;
+    viewport.scrollTop = list.offsetOf(index);
+    scrollTop = viewport.scrollTop;
+  }
+
   function onScroll(): void {
     if (!viewport) return;
     scrollTop = viewport.scrollTop;
@@ -174,6 +202,41 @@
 {#if loadingOlder}
   <div class="older" role="status"><span class="spinner"></span></div>
 {/if}
+<svelte:window
+  onclick={(event) => {
+    if (indexOpen && !(event.target as Element).closest(".question-index")) indexOpen = false;
+  }}
+  onkeydown={(event) => {
+    if (event.key === "Escape") indexOpen = false;
+  }}
+/>
+
+{#if questions.length > 1}
+  <div class="question-index">
+    <button
+      class="btn btn-ghost"
+      class:open={indexOpen}
+      onclick={() => (indexOpen = !indexOpen)}
+      aria-haspopup="menu"
+      aria-expanded={indexOpen}
+      type="button"
+      data-testid="question-index-toggle"
+    >
+      {app.t("chat.index")} ({questions.length})
+    </button>
+    {#if indexOpen}
+      <ol class="menu" role="menu" data-testid="question-index">
+        {#each questions as question, number (question.id)}
+          <li role="none">
+            <button class="btn btn-ghost" role="menuitem" type="button" onclick={() => jumpTo(question.index)}>
+              <span class="num">{number + 1}</span>{question.label}
+            </button>
+          </li>
+        {/each}
+      </ol>
+    {/if}
+  </div>
+{/if}
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="viewport" bind:this={viewport}
   onscroll={onScroll}
@@ -198,6 +261,44 @@
     display: flex;
     justify-content: center;
     padding: 0.35rem;
+    color: var(--text-faint);
+  }
+
+  .question-index {
+    position: relative;
+    align-self: flex-end;
+    z-index: 5;
+    padding: 0.25rem var(--gutter) 0;
+  }
+
+  .menu {
+    position: absolute;
+    right: var(--gutter);
+    top: 100%;
+    margin: 0;
+    padding: 0.25rem;
+    list-style: none;
+    width: min(28rem, calc(100vw - 2 * var(--gutter)));
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+  }
+
+  .menu .btn {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .num {
+    flex: none;
+    min-width: 1.5em;
     color: var(--text-faint);
   }
 
