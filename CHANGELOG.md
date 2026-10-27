@@ -6,6 +6,15 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-27
+
+### Added
+
+- Send images to vision models: a paperclip button (or pasting a screenshot) attaches up
+  to four PNG, JPEG, GIF or WebP images to a message. They show as thumbnails in the
+  conversation and are sent again on later turns, so the model keeps seeing them. A
+  model that reports no vision support refuses them with a clear error.
+
 ## [0.5.0] - 2026-10-25
 
 ### Added

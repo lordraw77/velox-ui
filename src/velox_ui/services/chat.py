@@ -28,6 +28,7 @@ which is free to cancel.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
 import logging
@@ -39,7 +40,8 @@ import msgspec
 from velox_ui.api.sse import HEARTBEAT, encode_event, encode_text_delta
 from velox_ui.clock import MonotonicTimer
 from velox_ui.db.repositories.chats import ChatRepository
-from velox_ui.errors import NotFoundError, VeloxError
+from velox_ui.db.repositories.files import FileRepository
+from velox_ui.errors import NotFoundError, ValidationError, VeloxError
 from velox_ui.ids import new_ulid
 from velox_ui.mcp.client import McpError
 from velox_ui.mcp.schema_translate import render_tool_result, split_qualified_name, to_tool_spec
@@ -49,6 +51,7 @@ from velox_ui.providers.base import (
     Capabilities,
     ChatMessage,
     ChatRequest,
+    ContentPart,
     Done,
     Provider,
     ReasoningDelta,
@@ -62,13 +65,14 @@ from velox_ui.providers.base import (
     ToolSupport,
     Usage,
 )
-from velox_ui.providers.errors import ProviderError
+from velox_ui.providers.errors import ProviderError, UnsupportedCapability
 from velox_ui.providers.tools.emulated import (
     build_tool_prompt,
     parse_tool_call,
     strip_tool_call,
 )
-from velox_ui.services.context import build_messages
+from velox_ui.security.uploads import IMAGE_CONTENT_TYPES, read_upload
+from velox_ui.services.context import attachment_ids, build_messages, with_images
 from velox_ui.services.model_params import merge_params
 from velox_ui.services.persistence import StreamWriter
 from velox_ui.state import AppState
@@ -138,6 +142,7 @@ class PreparedTurn:
         citations: Sequence[RetrievedChunk] = (),
         tool_index: dict[str, ServerTool | _BuiltinTool] | None = None,
         native_tools: bool = False,
+        attachments: Sequence[dict[str, Any]] = (),
     ) -> None:
         """Store everything the stream needs; perform no I/O.
 
@@ -160,6 +165,9 @@ class PreparedTurn:
                 back to how to execute it. Empty when the turn offers no tools —
                 the common case, and the one this costs nothing beyond an
                 empty-dict membership check for.
+            attachments: Metadata of the images sent with the user message
+                (``{"id", "filename", "content_type"}``), stored on its row so the
+                conversation can show them and replay them on later turns.
             native_tools: Whether tools were attached to ``request.tools`` for the
                 provider's own tool-calling support. When ``False`` but ``tool_index``
                 is non-empty, tools were instead described in the prompt
@@ -174,6 +182,7 @@ class PreparedTurn:
         self._parent_id = parent_id
         self._depth = depth
         self._content = content
+        self._attachments = list(attachments)
         self._request = request
         self._citations = citations
         self._tool_index = tool_index or {}
@@ -464,6 +473,7 @@ class PreparedTurn:
                 content=self._content,
                 message_id=self.user_message_id,
                 depth=self._depth,
+                meta={"attachments": self._attachments} if self._attachments else None,
             )
             await repository.append_message(
                 chat_id=self._chat_id,
@@ -502,6 +512,7 @@ class ChatService:
         knowledge_ids: Sequence[str] = (),
         tool_server_ids: Sequence[str] = (),
         web_tools: bool = False,
+        attachment_ids_: Sequence[str] = (),
     ) -> PreparedTurn:
         """Validate a turn and gather everything needed to run it.
 
@@ -534,11 +545,19 @@ class ChatService:
                 default; when set, one plugin-registry lookup decides whether a
                 ``"tools"`` plugin is configured at all.
 
+            attachment_ids_: Ids of images uploaded with ``POST /api/attachments`` to
+                send with this message. They are validated before anything streams: a
+                model that cannot see images is refused here with a clear error, not
+                left to answer as though no picture had been sent.
+
         Returns:
             A :class:`PreparedTurn`.
 
         Raises:
             NotFoundError: If the conversation does not exist or is not the caller's.
+            ValidationError: If an attachment is not one of the caller's images.
+            UnsupportedCapability: If images are attached and the model reports no
+                vision support.
             ModelNotFound: If the reference names no configured provider.
         """
         resolved = await self._state.providers.resolve(model_ref)
@@ -560,8 +579,22 @@ class ChatService:
             )
 
         capabilities = await self._capabilities_of(resolved.provider, resolved.model_key)
+        if attachment_ids_ and capabilities is not None and not capabilities.vision:
+            raise UnsupportedCapability(
+                f"{resolved.model_key} does not accept images. Pick a vision model.",
+                provider_id=resolved.provider.provider_id,
+                model=resolved.model_key,
+            )
+        history_ids = [file_id for node in path for file_id in attachment_ids(node.meta)]
+        images = await self._load_images([*history_ids, *attachment_ids_], user_id=user_id)
+        sent: list[dict[str, Any]] = []
+        for file_id in attachment_ids_:
+            if file_id not in images:
+                raise ValidationError("An attached image no longer exists.")
+            sent.append(images[file_id][1])
         messages = build_messages(
             path,
+            images={file_id: part for file_id, (part, _) in images.items()},
             system_prompt=chat_system_prompt or system_prompt,
             context_window=capabilities.context_window if capabilities else None,
         )
@@ -601,7 +634,14 @@ class ChatService:
             else:
                 messages.append(ChatMessage(role="system", content=build_tool_prompt(specs)))
 
-        messages.append(ChatMessage(role="user", content=content))
+        messages.append(
+            ChatMessage(
+                role="user",
+                content=with_images(
+                    content, [images[file_id][0] for file_id in attachment_ids_]
+                ),
+            )
+        )
 
         return PreparedTurn(
             state=self._state,
@@ -621,7 +661,52 @@ class ChatService:
             citations=citations,
             tool_index=tool_index,
             native_tools=native_tools,
+            attachments=sent,
         )
+
+    async def _load_images(
+        self, file_ids: Sequence[str], *, user_id: str
+    ) -> dict[str, tuple[ContentPart, dict[str, Any]]]:
+        """Read attached images into provider parts, with the metadata to store.
+
+        Only the caller's own image files are returned. Anything else -- another
+        user's file, a document, a file since deleted -- is simply absent, and the
+        caller decides whether that is an error (a new attachment) or not (an image in
+        history that has since been removed).
+        """
+        wanted = list(dict.fromkeys(file_ids))
+        if not wanted:
+            return {}
+        loaded: dict[str, tuple[ContentPart, dict[str, Any]]] = {}
+        async with self._state.db.session() as session:
+            repository = FileRepository(session)
+            rows = [
+                (file_id, row)
+                for file_id in wanted
+                if (row := await repository.get(file_id)) is not None
+                and row.user_id == user_id
+                and row.content_type in IMAGE_CONTENT_TYPES
+            ]
+            found = [
+                (file_id, row.storage_key, row.content_type, row.filename)
+                for file_id, row in rows
+            ]
+        for file_id, storage_key, content_type, filename in found:
+            try:
+                data = await asyncio.to_thread(
+                    read_upload, self._state.settings.data_dir, storage_key
+                )
+            except OSError:
+                continue
+            loaded[file_id] = (
+                ContentPart(
+                    kind="image",
+                    image_base64=base64.b64encode(data).decode("ascii"),
+                    media_type=content_type,
+                ),
+                {"id": file_id, "filename": filename, "content_type": content_type},
+            )
+        return loaded
 
     async def _retrieve(
         self, knowledge_ids: Sequence[str], query: str, *, k_per_collection: int = 4

@@ -358,7 +358,7 @@ class OpenAICompatProvider:
                         parts.append({"type": "text", "text": part.text})
                     elif part.kind == "image":
                         url = part.image_url or (
-                            f"data:image/png;base64,{part.image_base64}"
+                            f"data:{part.media_type or 'image/png'};base64,{part.image_base64}"
                             if part.image_base64
                             else None
                         )

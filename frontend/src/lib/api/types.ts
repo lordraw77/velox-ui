@@ -20,6 +20,13 @@ export interface Timings {
   eval_ms: number | null;
 }
 
+/** An image sent with a message, uploaded beforehand with `POST /api/attachments`. */
+export interface Attachment {
+  id: string;
+  filename: string;
+  content_type: string;
+}
+
 export interface Message {
   id: string;
   parent_id: string | null;
@@ -35,7 +42,7 @@ export interface Message {
   timings: Timings | null;
   error: ApiError | null;
   /** Free-form extras. Currently only `tool_trace`, when the turn used tools. */
-  meta: { tool_trace?: ToolTraceEntry[] } | null;
+  meta: { tool_trace?: ToolTraceEntry[]; attachments?: Attachment[] } | null;
   created_at: number;
   sibling_index: number;
   sibling_count: number;

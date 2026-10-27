@@ -62,6 +62,8 @@ class CompletionRequest(msgspec.Struct):
     knowledge_ids: tuple[str, ...] = ()
     tool_server_ids: tuple[str, ...] = ()
     web_tools: bool = False
+    # Images uploaded with POST /api/attachments, sent along with this message.
+    attachment_ids: tuple[str, ...] = ()
 
 
 @router.post("", summary="Create a conversation")
@@ -313,6 +315,7 @@ async def completions(
         knowledge_ids=body.knowledge_ids,
         tool_server_ids=body.tool_server_ids,
         web_tools=body.web_tools,
+        attachment_ids_=body.attachment_ids,
     )
     # The turn runs as its own task; this response only reads it. Closing the response
     # -- another chat opened, a page reloaded, a laptop closed -- no longer stops the

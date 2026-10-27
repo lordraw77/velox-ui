@@ -146,6 +146,8 @@ class ContentPart(msgspec.Struct, frozen=True):
     text: str | None = None
     image_url: str | None = None
     image_base64: str | None = None
+    media_type: str | None = None
+    """MIME type of ``image_base64``; adapters fall back to PNG when it is unset."""
 
 
 class ToolCall(msgspec.Struct, frozen=True):

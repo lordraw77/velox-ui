@@ -18,10 +18,13 @@ from velox_ui.errors import ValidationError
 
 __all__ = [
     "ALLOWED_CONTENT_TYPES",
+    "IMAGE_CONTENT_TYPES",
+    "MAX_IMAGE_BYTES",
     "MAX_UPLOAD_BYTES",
     "UploadedContent",
     "sniff_content_type",
     "store_upload",
+    "validate_image_upload",
 ]
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -33,6 +36,19 @@ ALLOWED_CONTENT_TYPES: dict[str, tuple[bytes, ...]] = {
     "text/plain": (),
     "text/markdown": (),
     "application/pdf": (b"%PDF-",),
+}
+
+
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+# Chat attachments for vision models. Identified by magic bytes alone: the extension
+# and the declared type are hints a client controls. SVG is left out on purpose -- it
+# is a document that can carry script, not a picture a vision model can read.
+IMAGE_CONTENT_TYPES: dict[str, tuple[bytes, ...]] = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/webp": (b"RIFF",),
 }
 
 
@@ -95,6 +111,29 @@ def validate_upload(
         )
     content_type = sniff_content_type(filename, declared_content_type, data)
     return UploadedContent(data, content_type)
+
+
+def validate_image_upload(data: bytes) -> UploadedContent:
+    """Validate a chat image by size and magic bytes, and hash it.
+
+    Raises:
+        ValidationError: If the upload is empty, too large, or not a PNG, JPEG, GIF or
+            WebP image.
+    """
+    if not data:
+        raise ValidationError("The uploaded file is empty.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValidationError(
+            f"The image exceeds the {MAX_IMAGE_BYTES // (1024 * 1024)} MB limit."
+        )
+    for content_type, prefixes in IMAGE_CONTENT_TYPES.items():
+        if not any(data.startswith(prefix) for prefix in prefixes):
+            continue
+        # A RIFF container is also WAV and AVI; WebP says so at offset 8.
+        if content_type == "image/webp" and data[8:12] != b"WEBP":
+            continue
+        return UploadedContent(data, content_type)
+    raise ValidationError("Unsupported image. Accepted: PNG, JPEG, GIF and WebP.")
 
 
 def store_upload(data_dir: Path, content: UploadedContent) -> str:

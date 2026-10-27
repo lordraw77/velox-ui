@@ -8,12 +8,13 @@
 <script lang="ts">
   import { Recorder } from "$lib/audio/record";
   import { api } from "$lib/api/client";
+  import type { Attachment } from "$lib/api/types";
   import { app } from "$lib/stores/app.svelte";
 
   interface Props {
     disabled: boolean;
     streaming: boolean;
-    onsend: (text: string) => void;
+    onsend: (text: string, attachments: Attachment[]) => void;
     onstop: () => void;
   }
 
@@ -30,6 +31,75 @@
   let generating = $state(false);
   let generatedImages = $state<string[]>([]);
 
+  /** Images picked for the next message, shown as soon as they are chosen. */
+  interface Pending {
+    key: number;
+    preview: string;
+    name: string;
+    /** Set once the upload finishes; the message can be sent only when all are set. */
+    attachment: Attachment | null;
+  }
+
+  const MAX_ATTACHMENTS = 4;
+  const IMAGE_TYPES = "image/png,image/jpeg,image/gif,image/webp";
+
+  let pending = $state<Pending[]>([]);
+  let fileInput: HTMLInputElement | undefined = $state();
+  let nextKey = 0;
+
+  let uploading = $derived(pending.some((entry) => entry.attachment === null));
+  let hasContent = $derived(text.trim() !== "" || pending.length > 0);
+
+  function addFiles(files: Iterable<File>): void {
+    for (const file of files) {
+      if (!IMAGE_TYPES.split(",").includes(file.type)) continue;
+      if (pending.length >= MAX_ATTACHMENTS) {
+        app.report(new Error(app.t("chat.attachmentLimit", { max: MAX_ATTACHMENTS })));
+        break;
+      }
+      const entry: Pending = {
+        key: nextKey++,
+        preview: URL.createObjectURL(file),
+        name: file.name,
+        attachment: null,
+      };
+      pending.push(entry);
+      api
+        .uploadAttachment(file)
+        .then((attachment) => {
+          const current = pending.find((item) => item.key === entry.key);
+          if (current) current.attachment = attachment;
+        })
+        .catch((error) => {
+          removePending(entry.key);
+          app.report(error);
+        });
+    }
+  }
+
+  function removePending(key: number): void {
+    const entry = pending.find((item) => item.key === key);
+    if (entry) URL.revokeObjectURL(entry.preview);
+    pending = pending.filter((item) => item.key !== key);
+  }
+
+  function clearPending(): void {
+    for (const entry of pending) URL.revokeObjectURL(entry.preview);
+    pending = [];
+  }
+
+  function onPaste(event: ClipboardEvent): void {
+    const files = [...(event.clipboardData?.files ?? [])].filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (files.length === 0) return;
+    // A pasted screenshot has no text to insert; keep any text paste untouched.
+    event.preventDefault();
+    addFiles(files);
+  }
+
+  $effect(() => clearPending);
+
   const MAX_HEIGHT = 220;
 
   function resize(): void {
@@ -40,9 +110,11 @@
 
   function submit(): void {
     const value = text.trim();
-    if (!value || disabled || streaming) return;
-    onsend(value);
+    if ((!value && pending.length === 0) || uploading || disabled || streaming) return;
+    const attachments = pending.flatMap((entry) => (entry.attachment ? [entry.attachment] : []));
+    onsend(value, attachments);
     text = "";
+    clearPending();
     queueMicrotask(resize);
   }
 
@@ -125,12 +197,56 @@
   </div>
 {/if}
 
+{#if pending.length > 0}
+  <div class="pending" data-testid="pending-attachments">
+    {#each pending as entry (entry.key)}
+      <span class="chip" class:uploading={entry.attachment === null}>
+        <img src={entry.preview} alt={entry.name} />
+        <button
+          class="remove"
+          onclick={() => removePending(entry.key)}
+          aria-label={app.t("chat.attachmentRemove")}
+          title={app.t("chat.attachmentRemove")}
+          type="button"
+        >
+          ×
+        </button>
+      </span>
+    {/each}
+  </div>
+{/if}
+
 <div class="composer">
+  <input
+    bind:this={fileInput}
+    type="file"
+    accept={IMAGE_TYPES}
+    multiple
+    hidden
+    onchange={(event) => {
+      addFiles(event.currentTarget.files ?? []);
+      event.currentTarget.value = "";
+    }}
+    data-testid="attachment-input"
+  />
+  <button
+    class="btn btn-ghost"
+    onclick={() => fileInput?.click()}
+    disabled={disabled || streaming || pending.length >= MAX_ATTACHMENTS}
+    title={app.t("chat.attach")}
+    aria-label={app.t("chat.attach")}
+    type="button"
+    data-testid="attach"
+  >
+    📎
+  </button>
+
   <textarea
     bind:this={textarea}
     bind:value={text}
     oninput={resize}
     onkeydown={onKeydown}
+    onpaste={onPaste}
     placeholder={disabled ? app.t("chat.placeholderNoModel") : app.t("chat.placeholder")}
     disabled={disabled && !streaming}
     rows="1"
@@ -179,7 +295,7 @@
     <button
       class="btn btn-primary"
       onclick={submit}
-      disabled={disabled || text.trim() === ""}
+      disabled={disabled || !hasContent || uploading}
       type="button"
       data-testid="send"
     >
@@ -228,6 +344,46 @@
 
   button.active {
     color: var(--danger);
+  }
+
+  .pending {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    width: 100%;
+    max-width: var(--content-width);
+    margin: 0 auto;
+    padding: 0.5rem var(--gutter) 0;
+  }
+
+  .chip {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .chip img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .chip.uploading img {
+    opacity: 0.45;
+  }
+
+  .remove {
+    position: absolute;
+    top: -0.4rem;
+    right: -0.4rem;
+    width: 1.3rem;
+    height: 1.3rem;
+    padding: 0;
+    line-height: 1;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 50%;
   }
 
   .image-panel {

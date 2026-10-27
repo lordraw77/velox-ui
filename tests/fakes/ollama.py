@@ -15,6 +15,7 @@ without a configuration handshake:
 * ``thinking``      — a reasoning model: text arrives in ``message.thinking`` and
   ``content`` stays empty until the thinking ends, which is what real qwen3 and
   deepseek-r1 responses look like
+* ``llava``         — reports the ``vision`` capability, so it accepts images
 * ``ghost``         — a model that exists nowhere: ``/api/show``, ``/api/delete`` and
   ``/api/copy`` answer 404, and ``/api/pull`` answers **200** with the error inside
   the stream, exactly as Ollama 0.34 does
@@ -99,7 +100,9 @@ async def _show(request: Request) -> JSONResponse:
                 "quantization_level": "Q4_K_M",
             },
             "model_info": {"llama.context_length": 131072, "llama.embedding_length": 3072},
-            "capabilities": ["completion", "tools"],
+            "capabilities": ["completion", "tools", "vision"]
+            if body.get("model") == "llava"
+            else ["completion", "tools"],
             "template": "{{ .System }}\n{{ .Prompt }}",
             "modified_at": "2026-09-08T08:41:58.117042021+02:00",
         }

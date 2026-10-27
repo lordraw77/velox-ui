@@ -11,6 +11,7 @@
   opening a conversation downloads none of them.
 -->
 <script lang="ts">
+  import type { Attachment } from "$lib/api/types";
   import AuthGate from "$lib/components/AuthGate.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
@@ -36,7 +37,7 @@
     | "admin";
 
   let view = $state<View>("chat");
-  let lastSent = $state<string | null>(null);
+  let lastSent = $state<{ text: string; attachments: Attachment[] } | null>(null);
 
   function route(): void {
     const hash = location.hash;
@@ -86,13 +87,13 @@
     location.hash = `#/${target}`;
   }
 
-  function send(text: string): void {
-    lastSent = text;
-    void conversation.send(text);
+  function send(text: string, attachments: Attachment[] = []): void {
+    lastSent = { text, attachments };
+    void conversation.send(text, undefined, false, attachments);
   }
 
   function retry(): void {
-    if (lastSent) void conversation.send(lastSent);
+    if (lastSent) void conversation.send(lastSent.text, undefined, false, lastSent.attachments);
   }
 
   let canSend = $derived(app.modelRef !== null);

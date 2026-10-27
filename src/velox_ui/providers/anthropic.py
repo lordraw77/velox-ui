@@ -364,7 +364,7 @@ class AnthropicProvider:
                             if part.image_url
                             else {
                                 "type": "base64",
-                                "media_type": "image/png",
+                                "media_type": part.media_type or "image/png",
                                 "data": part.image_base64,
                             }
                         )

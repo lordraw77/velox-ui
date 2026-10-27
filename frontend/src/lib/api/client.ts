@@ -12,6 +12,7 @@
  */
 
 import type {
+  Attachment,
   AdminUser,
   AdminUserPage,
   ApiError,
@@ -685,6 +686,26 @@ export class ApiClient {
       ? `/api/audio/transcribe?language=${encodeURIComponent(language)}`
       : "/api/audio/transcribe";
     return this.request<{ text: string }>(path, { method: "POST", body: form });
+  }
+
+  /** Upload an image to send with the next message. */
+  async uploadAttachment(file: File): Promise<Attachment> {
+    const form = new FormData();
+    form.append("upload", file, file.name || "image");
+    return this.request<Attachment>("/api/attachments", { method: "POST", body: form });
+  }
+
+  /**
+   * Fetch an uploaded file's bytes. An `<img src>` cannot carry the bearer token, so
+   * images are fetched here and shown from an object URL.
+   */
+  async fileBlob(id: string): Promise<Blob> {
+    let response = await this.#send(`/api/files/${id}/content`, {});
+    if (response.status === 401 && this.#session && (await this.#tryRefresh())) {
+      response = await this.#send(`/api/files/${id}/content`, {});
+    }
+    if (!response.ok) throw new VeloxApiError(response.status, await readError(response));
+    return response.blob();
   }
 
   /** Synthesize speech for a piece of text, returning playable audio. */

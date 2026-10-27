@@ -10,6 +10,7 @@
   import { conversation, type RenderedMessage } from "$lib/stores/conversation.svelte";
   import { api } from "$lib/api/client";
   import { app } from "$lib/stores/app.svelte";
+  import AttachmentImage from "./AttachmentImage.svelte";
   import Markdown from "./Markdown.svelte";
   import Metrics from "./Metrics.svelte";
 
@@ -132,6 +133,14 @@
     </details>
   {/if}
 
+  {#if isUser && message.meta?.attachments?.length}
+    <div class="attachments">
+      {#each message.meta.attachments as attachment (attachment.id)}
+        <AttachmentImage {attachment} />
+      {/each}
+    </div>
+  {/if}
+
   <div class="body" class:error={hasError}>
     {#if isUser}
       <!-- User text is never parsed as markdown: it is shown exactly as typed. -->
@@ -252,6 +261,13 @@
 </article>
 
 <style>
+  .attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+  }
+
   .message {
     padding: 0.9rem 0;
     border-bottom: 1px solid var(--border);

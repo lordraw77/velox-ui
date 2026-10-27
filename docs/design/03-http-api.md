@@ -124,7 +124,11 @@ the parent message id, the user content, the model reference (or custom model sl
 per-turn parameter overrides, `knowledge_ids` (RAG), `tool_server_ids` (phase 8: MCP
 server ids to offer tools from) and `web_tools` (bool: whether to also offer the
 enabled builtin `"tools"` plugin's tools — web search and browsing, ADR-0014) — the
-client resolves all three from the chat's custom model the same way. The response
+client resolves all three from the chat's custom model the same way. It may also
+carry `attachment_ids`, images uploaded with `POST /api/attachments`; they are stored on
+the user message's `meta.attachments`, sent to the model as image parts, and replayed on
+later turns. A model that reports no vision support answers 422
+`unsupported_capability`. The response
 event types are a closed set, versioned by the `event:` field:
 
 ```
@@ -186,6 +190,7 @@ is). `fallback_chain` is still carried but unused by any phase so far.
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/api/files` | multipart upload, sniffed type, size cap |
+| POST | `/api/attachments` | multipart image upload (PNG, JPEG, GIF, WebP; 10 MB) to send with a message; bytes are read back from `/api/files/{id}/content` |
 | GET/DELETE | `/api/files/{id}` | |
 | GET/POST/PATCH/DELETE | `/api/collections…` | knowledge bases |
 | POST | `/api/collections/{id}/documents` | multipart form (`file_id`, optional `title`); enqueues ingest, returns the document and job id (202) immediately |

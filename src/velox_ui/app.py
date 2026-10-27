@@ -29,6 +29,7 @@ from velox_ui.api.middleware import MetricsMiddleware, RequestContextMiddleware
 from velox_ui.api.routes import (
     admin,
     apikeys,
+    attachments,
     audio,
     auth,
     chats,
@@ -122,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search.router)
     app.include_router(custom_models.router)
     app.include_router(rag.router)
+    app.include_router(attachments.router)
     app.include_router(mcp.router)
     app.include_router(tools.router)
     app.include_router(plugins.router)

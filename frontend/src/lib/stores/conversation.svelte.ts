@@ -24,6 +24,7 @@ import type {
   Chat,
   CitationEvent,
   CustomModel,
+  Attachment,
   Message,
   ParamValue,
   StartEvent,
@@ -247,8 +248,14 @@ class ConversationStore {
    * @param content - The user's text.
    * @param parentId - Branch point, for regenerating from an earlier turn.
    * @param fromRoot - Branch from the first turn, where there is no parent to name.
+   * @param attachments - Images already uploaded, to send with the message.
    */
-  async send(content: string, parentId?: string | null, fromRoot = false): Promise<void> {
+  async send(
+    content: string,
+    parentId?: string | null,
+    fromRoot = false,
+    attachments: Attachment[] = [],
+  ): Promise<void> {
     const modelRef = app.modelRef;
     if (!modelRef || this.streaming) return;
 
@@ -283,6 +290,7 @@ class ConversationStore {
       role: "user",
       content,
       parent_id: parentId ?? null,
+      meta: attachments.length > 0 ? { attachments } : null,
     });
 
     // Asked for here, where a reply is about to be produced, rather than on load: a
@@ -302,6 +310,7 @@ class ConversationStore {
           knowledge_ids: startingModel?.knowledgeIds ?? undefined,
           tool_server_ids: startingModel?.toolServerIds ?? undefined,
           web_tools: app.toolsEnabled || (startingModel?.webToolsEnabled ?? false),
+          attachment_ids: attachments.length > 0 ? attachments.map((entry) => entry.id) : undefined,
         },
         this.#controller.signal,
       );
@@ -326,7 +335,12 @@ class ConversationStore {
       ? this.messages.find((entry) => entry.id === reply.parent_id)
       : undefined;
     if (!prompt || prompt.role !== "user" || prompt.id.startsWith("pending-")) return;
-    await this.send(prompt.content, prompt.parent_id, prompt.parent_id === null);
+    await this.send(
+      prompt.content,
+      prompt.parent_id,
+      prompt.parent_id === null,
+      prompt.meta?.attachments ?? [],
+    );
   }
 
   /**
@@ -621,7 +635,7 @@ class ConversationStore {
       cost_micros: null,
       timings: null,
       error: null,
-      meta: null,
+      meta: partial.meta ?? null,
       created_at: Date.now(),
       sibling_index: 0,
       sibling_count: 1,

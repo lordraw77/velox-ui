@@ -14,12 +14,12 @@ rather than under — so the budget errs toward sending less than the window all
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from velox_ui.db.repositories.chats import MessageNode
-from velox_ui.providers.base import ChatMessage
+from velox_ui.providers.base import ChatMessage, ContentPart
 
-__all__ = ["CHARS_PER_TOKEN", "build_messages", "estimate_tokens"]
+__all__ = ["CHARS_PER_TOKEN", "attachment_ids", "build_messages", "estimate_tokens"]
 
 # English prose runs around four characters per token across the common BPE
 # vocabularies. Code and non-Latin scripts run denser, which is why the reserve below
@@ -32,9 +32,31 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // CHARS_PER_TOKEN)
 
 
+# A picture costs a roughly fixed number of tokens whatever its bytes, and the real
+# figure depends on the model. This keeps the budget honest without pretending to know.
+IMAGE_TOKEN_ESTIMATE = 800
+
+
+def attachment_ids(meta: Mapping[str, object] | None) -> list[str]:
+    """Return the file ids of the images attached to a message, from its ``meta``."""
+    entries = (meta or {}).get("attachments")
+    if not isinstance(entries, list):
+        return []
+    return [entry["id"] for entry in entries if isinstance(entry, dict) and "id" in entry]
+
+
+def with_images(text: str, images: Sequence[ContentPart]) -> str | tuple[ContentPart, ...]:
+    """Combine a message's text with its images into one provider message body."""
+    if not images:
+        return text
+    parts = (ContentPart(kind="text", text=text),) if text else ()
+    return (*parts, *images)
+
+
 def build_messages(
     path: Sequence[MessageNode],
     *,
+    images: Mapping[str, ContentPart] | None = None,
     system_prompt: str | None = None,
     context_window: int | None = None,
     reserve_for_output: int = 1024,
@@ -43,6 +65,8 @@ def build_messages(
 
     Args:
         path: The active branch, root first, as stored.
+        images: Image parts by file id, for the attachments of messages on ``path``.
+            An id missing here -- a file deleted since -- is skipped, not an error.
         system_prompt: Prepended as a system message when given.
         context_window: The model's real context window, as probed from the backend.
             ``None`` means unknown, in which case nothing is dropped — guessing a
@@ -57,10 +81,18 @@ def build_messages(
     its middle reads as a model that has lost the plot, while one missing its opening
     reads as a conversation that has simply been going on for a while.
     """
+    known = images or {}
     messages = [
-        ChatMessage(role=node.role, content=node.content)  # type: ignore[arg-type]
+        ChatMessage(
+            role=node.role,  # type: ignore[arg-type]
+            content=with_images(
+                node.content,
+                [known[file_id] for file_id in attachment_ids(node.meta) if file_id in known],
+            ),
+        )
         for node in path
-        if node.role in ("user", "assistant", "system") and node.content
+        if node.role in ("user", "assistant", "system")
+        and (node.content or attachment_ids(node.meta))
     ]
 
     if context_window is None:
@@ -73,8 +105,15 @@ def build_messages(
     kept: list[ChatMessage] = []
     used = 0
     for message in reversed(messages):
-        text = message.content if isinstance(message.content, str) else ""
-        cost = estimate_tokens(text)
+        if isinstance(message.content, str):
+            cost = estimate_tokens(message.content)
+        else:
+            cost = sum(
+                estimate_tokens(part.text or "")
+                if part.kind == "text"
+                else IMAGE_TOKEN_ESTIMATE
+                for part in message.content
+            )
         if used + cost > budget and kept:
             break
         used += cost
