@@ -22,6 +22,8 @@ import { readSse } from "$lib/api/sse";
 import type {
   ApiError,
   Chat,
+  CompactionResult,
+  ContextUsage,
   CitationEvent,
   CustomModel,
   Attachment,
@@ -114,6 +116,13 @@ class ConversationStore {
    */
   systemPrompt = $state("");
 
+  /** Notes standing in for the older part of this conversation. */
+  memory = $state("");
+  /** Estimated fill of the model's window for the next turn; null until measured. */
+  context = $state<ContextUsage | null>(null);
+  compacting = $state(false);
+  #contextSeq = 0;
+
   get isEmpty(): boolean {
     return this.messages.length === 0;
   }
@@ -134,6 +143,7 @@ class ConversationStore {
       this.id = chat.id;
       this.title = chat.title;
       this.systemPrompt = chat.system_prompt ?? "";
+      this.memory = chat.memory ?? "";
       this.messages = chat.messages.map(toRendered);
       this.olderCursor = chat.messages_cursor;
       this.usage = null;
@@ -146,6 +156,59 @@ class ConversationStore {
       this.loading = false;
     }
     await this.#attach(chatId);
+    void this.refreshContext();
+  }
+
+  /**
+   * Re-measure how full the model's window is. Cheap and best-effort: a failure leaves
+   * the previous figure rather than raising an error banner over a gauge.
+   */
+  async refreshContext(): Promise<void> {
+    const chatId = this.id;
+    const seq = ++this.#contextSeq;
+    if (chatId === null || this.isEmpty) {
+      this.context = null;
+      return;
+    }
+    try {
+      const usage = await api.contextUsage(chatId, app.modelRef);
+      if (seq === this.#contextSeq && this.id === chatId) this.context = usage;
+    } catch {
+      // The gauge is informational.
+    }
+  }
+
+  /** Summarize the conversation into its memory; later turns send the notes instead. */
+  async compact(): Promise<CompactionResult | null> {
+    const chatId = this.id;
+    const modelRef = app.modelRef;
+    if (chatId === null || modelRef === null) return null;
+    this.compacting = true;
+    try {
+      const result = await api.compactChat(chatId, modelRef);
+      if (this.id === chatId) this.memory = result.memory;
+      await this.refreshContext();
+      return result;
+    } catch (error) {
+      app.report(error);
+      return null;
+    } finally {
+      this.compacting = false;
+    }
+  }
+
+  /** Edit the memory text by hand. Empty forgets it and sends every message again. */
+  async setMemory(text: string): Promise<void> {
+    const chatId = this.id;
+    if (chatId === null) return;
+    try {
+      const updated = await api.setMemory(chatId, text);
+      if (this.id === chatId) this.memory = updated.memory ?? "";
+      await this.refreshContext();
+    } catch (error) {
+      app.report(error);
+      throw error;
+    }
   }
 
   /** Start a fresh, unsaved conversation. */
@@ -154,6 +217,8 @@ class ConversationStore {
     this.id = null;
     this.title = "";
     this.systemPrompt = "";
+    this.memory = "";
+    this.context = null;
     this.messages = [];
     this.olderCursor = null;
     this.usage = null;
@@ -478,6 +543,7 @@ class ConversationStore {
         this.#render(assistant, true);
       }
       if (this.id) app.touchChat(this.id, this.title);
+      void this.refreshContext();
       // Finished while the reader was elsewhere: say so, in the tab and, where the
       // browser allows it, on the desktop.
       if (document.hidden || this.id !== chatId) announceReply(this.title, chatId);

@@ -21,6 +21,7 @@ from velox_ui.db.repositories.chats import ChatRepository
 from velox_ui.errors import ConflictError, NotFoundError
 from velox_ui.providers.base import SamplingParams
 from velox_ui.services.chat import ChatService
+from velox_ui.services.memory import MemoryService
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -46,6 +47,19 @@ class UpdateChat(msgspec.Struct):
     archived: bool | msgspec.UnsetType = msgspec.UNSET
     folder_id: str | msgspec.UnsetType | None = msgspec.UNSET
     system_prompt: str | msgspec.UnsetType | None = msgspec.UNSET
+
+
+class CompactRequest(msgspec.Struct):
+    """Body for summarizing a conversation into its memory."""
+
+    model_ref: str
+    keep_last: int = 2
+
+
+class SetMemory(msgspec.Struct):
+    """Body for editing a conversation's memory. Empty or null forgets it."""
+
+    memory: str | None
 
 
 class CompletionRequest(msgspec.Struct):
@@ -172,6 +186,8 @@ async def get_chat(
             "model_ref": chat.model_ref,
             "custom_model_id": chat.custom_model_id,
             "system_prompt": chat.system_prompt,
+            "memory": chat.memory,
+            "memory_upto_id": chat.memory_upto_id,
             "pinned": bool(chat.pinned),
             "archived": bool(chat.archived),
             "active_leaf_id": chat.active_leaf_id,
@@ -268,6 +284,74 @@ async def update_chat(
             "archived": bool(chat.archived),
             "updated_at": chat.updated_at,
         }
+    return json_response(payload)
+
+
+@router.get("/{chat_id}/context", summary="Measure the context the next turn would send")
+async def get_context(
+    chat_id: str,
+    principal: CurrentPrincipal,
+    state: State,
+    model_ref: Annotated[str | None, Query()] = None,
+) -> Response:
+    """Report how much of the model's window the conversation fills.
+
+    Figures are estimates. ``window`` is null when the model's backend did not report
+    one, in which case nothing is ever dropped.
+
+    Raises:
+        NotFoundError: If it is not the caller's, or does not exist.
+    """
+    usage = await ChatService(state).context_usage(
+        chat_id=chat_id, user_id=principal.user_id, model_ref=model_ref
+    )
+    return json_response(usage)
+
+
+@router.post("/{chat_id}/compact", summary="Summarize the conversation into its memory")
+async def compact_chat(
+    chat_id: str, request: Request, principal: CurrentPrincipal, state: State
+) -> Response:
+    """Have a model write notes standing in for the older part of the conversation.
+
+    Messages are kept; later turns send the notes in place of them.
+
+    Raises:
+        NotFoundError: If it is not the caller's, or does not exist.
+        ConflictError: If a reply is still being written.
+        ValidationError: If there is nothing new to summarize.
+    """
+    body = await read_struct(request, CompactRequest)
+    result = await MemoryService(state).compact(
+        chat_id=chat_id,
+        user_id=principal.user_id,
+        model_ref=body.model_ref,
+        keep_last=max(0, min(body.keep_last, 50)),
+    )
+    return json_response(result)
+
+
+@router.put("/{chat_id}/memory", summary="Edit or forget a conversation's memory")
+async def set_memory(
+    chat_id: str, request: Request, principal: CurrentPrincipal, state: State
+) -> Response:
+    """Replace the memory text, keeping which messages it stands in for.
+
+    An empty ``memory`` forgets it, and every message is sent in full again.
+
+    Raises:
+        NotFoundError: If it is not the caller's, or does not exist.
+    """
+    body = await read_struct(request, SetMemory)
+    async with state.db.write() as session:
+        repository = ChatRepository(session)
+        if not await repository.set_memory(
+            chat_id, user_id=principal.user_id, memory=body.memory
+        ):
+            raise NotFoundError("No such conversation.")
+        chat = await repository.get(chat_id, user_id=principal.user_id)
+        assert chat is not None  # noqa: S101 - just updated in this transaction
+        payload = {"memory": chat.memory, "memory_upto_id": chat.memory_upto_id}
     return json_response(payload)
 
 

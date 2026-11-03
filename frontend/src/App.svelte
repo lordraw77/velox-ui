@@ -20,6 +20,7 @@
   import Header from "$lib/components/Header.svelte";
   import MessageList from "$lib/components/MessageList.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
+  import ContextMeter from "$lib/components/ContextMeter.svelte";
   import StatusLine from "$lib/components/StatusLine.svelte";
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
@@ -232,6 +233,14 @@
           {/await}
         {/if}
 
+        {#if app.contextOpen && conversation.id}
+          {#await import("$lib/components/ContextPanel.svelte") then { default: ContextPanel }}
+            <ContextPanel />
+          {:catch}
+            <PanelUnavailable />
+          {/await}
+        {/if}
+
         {#if app.paramsOpen && app.model}
           {#await import("$lib/components/ParamsPanel.svelte") then { default: ParamsPanel }}
             <ParamsPanel />
@@ -264,7 +273,10 @@
               onretry={retry}
             />
           {/if}
-          <div class="statusline"><StatusLine phase={conversation.phase} /></div>
+          <div class="statusline">
+            <StatusLine phase={conversation.phase} />
+            <ContextMeter />
+          </div>
           <Composer
             disabled={!canSend}
             streaming={conversation.streaming}

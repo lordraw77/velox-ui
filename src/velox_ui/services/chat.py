@@ -72,7 +72,13 @@ from velox_ui.providers.tools.emulated import (
     strip_tool_call,
 )
 from velox_ui.security.uploads import IMAGE_CONTENT_TYPES, read_upload
-from velox_ui.services.context import attachment_ids, build_messages, with_images
+from velox_ui.services.context import (
+    ContextUsage,
+    attachment_ids,
+    build_messages,
+    measure_context,
+    with_images,
+)
 from velox_ui.services.model_params import merge_params
 from velox_ui.services.persistence import StreamWriter
 from velox_ui.state import AppState
@@ -572,6 +578,7 @@ class ChatService:
                 raise NotFoundError("No such conversation.")
             branch_from = None if from_root else parent_id or chat.active_leaf_id
             chat_system_prompt = chat.system_prompt
+            memory, memory_upto_id = chat.memory, chat.memory_upto_id
             path = (
                 []
                 if from_root
@@ -597,6 +604,8 @@ class ChatService:
             images={file_id: part for file_id, (part, _) in images.items()},
             system_prompt=chat_system_prompt or system_prompt,
             context_window=capabilities.context_window if capabilities else None,
+            memory=memory,
+            memory_upto_id=memory_upto_id,
         )
 
         citations: list[RetrievedChunk] = []
@@ -662,6 +671,48 @@ class ChatService:
             tool_index=tool_index,
             native_tools=native_tools,
             attachments=sent,
+        )
+
+    async def context_usage(
+        self, *, chat_id: str, user_id: str, model_ref: str | None
+    ) -> ContextUsage:
+        """Measure the context the next turn of a conversation would send.
+
+        Args:
+            chat_id: The conversation.
+            user_id: Owner, checked against the conversation.
+            model_ref: The model the next turn will use, for its window. ``None`` or a
+                model that cannot be probed reports no window, and so no limit.
+
+        Raises:
+            NotFoundError: If the conversation does not exist or is not the caller's.
+        """
+        async with self._state.db.session() as session:
+            repository = ChatRepository(session)
+            chat = await repository.get(chat_id, user_id=user_id)
+            if chat is None:
+                raise NotFoundError("No such conversation.")
+            path = await repository.load_active_path(chat_id)
+            system_prompt, memory = chat.system_prompt, chat.memory
+            memory_upto_id = chat.memory_upto_id
+
+        window = None
+        if model_ref:
+            try:
+                resolved = await self._state.providers.resolve(model_ref)
+            except Exception:
+                resolved = None
+            if resolved is not None:
+                capabilities = await self._capabilities_of(
+                    resolved.provider, resolved.model_key
+                )
+                window = capabilities.context_window if capabilities else None
+        return measure_context(
+            path,
+            system_prompt=system_prompt,
+            context_window=window,
+            memory=memory,
+            memory_upto_id=memory_upto_id,
         )
 
     async def _load_images(

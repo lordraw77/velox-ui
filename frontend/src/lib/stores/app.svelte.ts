@@ -94,6 +94,9 @@ class AppStore {
   /** Whether the system prompt panel of the current conversation is open. */
   systemPromptOpen = $state(false);
 
+  /** Whether the context and memory panel of the current conversation is open. */
+  contextOpen = $state(false);
+
   /** Every model across every provider, local first. */
   get models(): ModelEntry[] {
     return this.providers.flatMap((group) => group.models);

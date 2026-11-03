@@ -20,6 +20,8 @@ import type {
   Chat,
   ChatPage,
   ClientConfig,
+  CompactionResult,
+  ContextUsage,
   Collection,
   CollectionVisibility,
   CustomModel,
@@ -27,6 +29,7 @@ import type {
   DiscoveredBackend,
   FallbackEntry,
   Folder,
+  MemoryState,
   GeneratedImage,
   InstalledModel,
   JobSnapshot,
@@ -350,6 +353,25 @@ export class ApiClient {
   chat(id: string, branch?: string): Promise<Chat> {
     const query = branch ? `?branch=${encodeURIComponent(branch)}` : "";
     return this.request<Chat>(`/api/chats/${id}${query}`);
+  }
+
+  /** How much of the model's window the next turn of a conversation would fill. */
+  contextUsage(id: string, modelRef: string | null): Promise<ContextUsage> {
+    const query = modelRef ? `?model_ref=${encodeURIComponent(modelRef)}` : "";
+    return this.request<ContextUsage>(`/api/chats/${id}/context${query}`);
+  }
+
+  /** Have a model summarize the conversation so far into its memory. */
+  compactChat(id: string, modelRef: string, keepLast?: number): Promise<CompactionResult> {
+    return this.#json("POST", `/api/chats/${id}/compact`, {
+      model_ref: modelRef,
+      ...(keepLast === undefined ? {} : { keep_last: keepLast }),
+    });
+  }
+
+  /** Replace the memory text. Empty forgets it. */
+  setMemory(id: string, memory: string): Promise<MemoryState> {
+    return this.#json("PUT", `/api/chats/${id}/memory`, { memory: memory.trim() || null });
   }
 
   /** The page of messages before `cursor`, oldest first. */

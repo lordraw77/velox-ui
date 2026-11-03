@@ -46,6 +46,10 @@ itself.
   page: open another chat, reload, or close the laptop and the model keeps
   going — coming back picks the reply up where it is, and one that finishes
   while you are elsewhere says so.
+- **Context manager** — a gauge shows how much of the model's window the next
+  message fills. Compacting a long chat has the model write notes on the older
+  messages, which are sent in their place; nothing is deleted, and the notes can
+  be edited or forgotten.
 - **RAG** — knowledge collections, document upload, background ingest/embed, and
   citations streamed into the reply.
 - **Tools** — MCP servers behind an approval gate, over stdio, Streamable HTTP or

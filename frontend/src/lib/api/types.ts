@@ -62,6 +62,10 @@ export interface ChatSummary {
 export interface Chat extends ChatSummary {
   /** System prompt bound to this conversation alone, or null. */
   system_prompt: string | null;
+  /** Notes standing in for the older part of the conversation, or null. */
+  memory: string | null;
+  /** The last message the memory replaces; messages up to it are not sent. */
+  memory_upto_id: string | null;
   active_leaf_id: string | null;
   created_at: number;
   /** The newest page of the active branch, oldest first. */
@@ -488,4 +492,31 @@ export interface PluginInfo {
 export interface GeneratedImage {
   file_id: string;
   content_type: string;
+}
+
+/** How much of the model's window the next turn fills. Every figure is an estimate. */
+export interface ContextUsage {
+  /** The model's window as its backend reported it, or null when unknown. */
+  window: number | null;
+  reserve: number;
+  used: number;
+  system_tokens: number;
+  memory_tokens: number;
+  messages_total: number;
+  messages_in_context: number;
+  messages_summarized: number;
+  messages_dropped: number;
+}
+
+export interface CompactionResult {
+  memory: string;
+  memory_upto_id: string;
+  summarized: number;
+  /** Messages too old to fit the model while summarizing. */
+  omitted: number;
+}
+
+export interface MemoryState {
+  memory: string | null;
+  memory_upto_id: string | null;
 }

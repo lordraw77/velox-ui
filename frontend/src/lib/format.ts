@@ -76,3 +76,10 @@ export function formatDate(epochMs: number | null | undefined, locale: string): 
   if (!epochMs) return "";
   return new Date(epochMs).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
 }
+
+/** A token count short enough for a gauge: 950, 1.2k, 32k. */
+export function formatTokens(tokens: number): string {
+  if (tokens < 1000) return String(tokens);
+  const thousands = tokens / 1000;
+  return `${thousands < 10 ? thousands.toFixed(1).replace(/\.0$/, "") : Math.round(thousands)}k`;
+}

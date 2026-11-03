@@ -6,6 +6,19 @@ aspirational.
 
 ## [Unreleased]
 
+### Added
+
+- Context manager. A gauge above the composer shows how much of the model's window the
+  next message will fill (an estimate, and only when the backend reports a window), and
+  how many of the oldest messages are being left out. Opening it shows the chat's
+  memory: **Compact** has the selected model write notes on what the older messages
+  established, and later turns send those notes in place of the messages, keeping the
+  latest exchange verbatim. Nothing is deleted. The notes can be edited or forgotten, and
+  a memory made on one branch is not applied to another. New endpoints:
+  `GET /api/chats/{id}/context`, `POST /api/chats/{id}/compact`,
+  `PUT /api/chats/{id}/memory`; migration `8a4c1d7e5b92` adds `chat.memory` and
+  `chat.memory_upto_id`.
+
 ## [0.6.0] - 2026-10-27
 
 ### Added

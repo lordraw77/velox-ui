@@ -550,6 +550,40 @@ class ChatRepository:
         )
         return bool(cast(CursorResult[Any], result).rowcount)
 
+    async def set_memory(
+        self,
+        chat_id: str,
+        *,
+        user_id: str,
+        memory: str | None,
+        upto_id: str | msgspec.UnsetType | None = msgspec.UNSET,
+    ) -> bool:
+        """Store a conversation's memory notes.
+
+        Args:
+            chat_id: The conversation.
+            user_id: Owner, enforced in the ``WHERE`` clause.
+            memory: The notes, or ``None``/empty to forget them. Forgetting also clears
+                the anchor: with no notes there is nothing for it to stand in for.
+            upto_id: The last message the notes replace. Left unset when only the text
+                is being edited, so the anchor survives.
+
+        Returns:
+            Whether a row was updated.
+        """
+        text = (memory or "").strip() or None
+        values: dict[str, Any] = {"memory": text}
+        if text is None:
+            values["memory_upto_id"] = None
+        elif upto_id is not msgspec.UNSET:
+            values["memory_upto_id"] = upto_id
+        result = await self._session.execute(
+            update(Chat)
+            .where(Chat.id == chat_id, Chat.user_id == user_id, Chat.deleted_at.is_(None))
+            .values(**values)
+        )
+        return bool(cast(CursorResult[Any], result).rowcount)
+
     async def set_organization(
         self,
         chat_id: str,

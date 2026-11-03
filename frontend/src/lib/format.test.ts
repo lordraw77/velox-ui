@@ -4,6 +4,7 @@ import {
   formatBytes,
   formatDuration,
   formatRate,
+  formatTokens,
   gpuShare,
   progressFraction,
 } from "./format";
@@ -54,5 +55,14 @@ describe("gpuShare", () => {
     expect(gpuShare(0, 48_203_038)).toBe(0);
     expect(gpuShare(null, 48_203_038)).toBeNull();
     expect(gpuShare(2_000, 4_000)).toBe(0.5);
+  });
+});
+
+describe("formatTokens", () => {
+  it("keeps small counts exact and abbreviates thousands", () => {
+    expect(formatTokens(950)).toBe("950");
+    expect(formatTokens(1200)).toBe("1.2k");
+    expect(formatTokens(2000)).toBe("2k");
+    expect(formatTokens(32768)).toBe("33k");
   });
 });

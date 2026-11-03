@@ -328,6 +328,11 @@ class Chat(Base):
         ForeignKey("custom_model.id", ondelete="SET NULL")
     )
     system_prompt: Mapped[str | None] = longtext()
+    # What the model should remember of the conversation (services/memory.py). When
+    # ``memory_upto_id`` is set, the memory stands in for every message up to and
+    # including that one; the messages themselves stay in the tree.
+    memory: Mapped[str | None] = longtext()
+    memory_upto_id: Mapped[UlidRef | None]
     pinned: Mapped[BoolInt] = mapped_column(default=False)
     archived: Mapped[BoolInt] = mapped_column(default=False)
     message_count: Mapped[int] = mapped_column(Integer, default=0)
