@@ -6,6 +6,8 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-05
+
 ### Added
 
 - Context manager. A gauge above the composer shows how much of the model's window the
@@ -18,6 +20,13 @@ aspirational.
   `GET /api/chats/{id}/context`, `POST /api/chats/{id}/compact`,
   `PUT /api/chats/{id}/memory`; migration `8a4c1d7e5b92` adds `chat.memory` and
   `chat.memory_upto_id`.
+
+### Fixed
+
+- Reasoning written inline in the text (`<think>…</think>`, or only `</think>` when the
+  chat template already opened the block) is now moved into the reasoning block instead
+  of showing up in the answer. Text already streamed before a lone `</think>` is
+  retracted from the answer and re-filed as reasoning (new `retract` stream event).
 
 ## [0.6.0] - 2026-10-27
 

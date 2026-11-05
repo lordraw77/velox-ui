@@ -66,6 +66,11 @@ class StreamWriter:
         """Record a token. Never touches the database."""
         self._parts.append(text)
 
+    def retract(self, size: int) -> None:
+        """Drop the last ``size`` characters, which turned out to be reasoning."""
+        text = self.text
+        self._parts = [text[: len(text) - size]] if size < len(text) else []
+
     def maybe_flush(self) -> None:
         """Schedule a flush if the interval has elapsed.
 

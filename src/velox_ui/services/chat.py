@@ -81,6 +81,7 @@ from velox_ui.services.context import (
 )
 from velox_ui.services.model_params import merge_params
 from velox_ui.services.persistence import StreamWriter
+from velox_ui.services.think_split import Answer, SplitEvent, ThinkSplitter, Thought
 from velox_ui.state import AppState
 
 if TYPE_CHECKING:  # pragma: no cover - typing only; keeps rag/ off the cold path.
@@ -251,6 +252,7 @@ class PreparedTurn:
                     else self._request
                 )
                 round_text_parts: list[str] = []
+                splitter = ThinkSplitter()
                 native_calls: dict[str, _CallBuffer] = {}
                 round_finish = "stop"
 
@@ -265,10 +267,11 @@ class PreparedTurn:
                             METRICS.ttft.labels(provider=provider_id, model=model_key).observe(
                                 ttft_ms / 1_000.0
                             )
-                        round_text_parts.append(event.text)
-                        writer.append(event.text)
-                        writer.maybe_flush()
-                        yield encode_text_delta(event.text)
+                        for piece in splitter.feed(event.text):
+                            for frame in self._route_split(
+                                piece, round_text_parts, reasoning_parts, writer
+                            ):
+                                yield frame
 
                     elif isinstance(event, Status):
                         yield encode_event("status", {"phase": str(event.phase)})
@@ -289,6 +292,12 @@ class PreparedTurn:
                     elif isinstance(event, Done):
                         round_finish = event.finish_reason
                         status = "complete"
+
+                for piece in splitter.finish():
+                    for frame in self._route_split(
+                        piece, round_text_parts, reasoning_parts, writer
+                    ):
+                        yield frame
 
                 finish_reason = round_finish
                 round_text = "".join(round_text_parts)
@@ -357,6 +366,28 @@ class PreparedTurn:
             )
             with contextlib.suppress(asyncio.CancelledError):
                 await asyncio.shield(finalizer)
+
+    @staticmethod
+    def _route_split(
+        piece: SplitEvent,
+        round_text_parts: list[str],
+        reasoning_parts: list[str],
+        writer: StreamWriter,
+    ) -> list[str]:
+        """Apply one splitter event to the round state and return the frames to send."""
+        if isinstance(piece, Answer):
+            round_text_parts.append(piece.text)
+            writer.append(piece.text)
+            writer.maybe_flush()
+            return [encode_text_delta(piece.text)]
+        if isinstance(piece, Thought):
+            reasoning_parts.append(piece.text)
+            return [encode_event("reasoning", {"t": piece.text})]
+        # Retract: text streamed as answer was reasoning after all.
+        round_text_parts.clear()
+        writer.retract(len(piece.text))
+        reasoning_parts.append(piece.text)
+        return [encode_event("retract", {"t": piece.text})]
 
     def _detect_tool_calls(
         self,

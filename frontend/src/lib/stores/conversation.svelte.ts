@@ -469,6 +469,19 @@ class ConversationStore {
             }
             break;
 
+          case "retract": {
+            // A lone closing think tag arrived: the text streamed so far was reasoning.
+            const moved = (JSON.parse(event.data) as { t: string }).t;
+            const whole = sink.pendingText;
+            sink.reset(whole.endsWith(moved) ? whole.slice(0, whole.length - moved.length) : "");
+            if (assistant) {
+              assistant.reasoning = (assistant.reasoning ?? "") + moved;
+              assistant.live = sink.text;
+              this.#maybeRenderMarkdown(assistant);
+            }
+            break;
+          }
+
           case "citation":
             if (assistant) {
               assistant.citations = [...assistant.citations, JSON.parse(event.data) as CitationEvent];
