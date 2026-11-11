@@ -6,6 +6,14 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-11
+
+### Fixed
+
+- Conversation and folder titles in the sidebar are no longer cut short by the hidden
+  action buttons: those take no room until the row is hovered or focused. Hovering a
+  title shows the full name as a tooltip.
+
 ## [0.8.0] - 2026-11-11
 
 ### Added

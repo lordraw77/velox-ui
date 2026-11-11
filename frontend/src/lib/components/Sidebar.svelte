@@ -395,7 +395,7 @@
             use:focusSelect
           />
         {:else}
-          <button class="title" onclick={() => onselect(chat.id)} type="button">
+          <button class="title" onclick={() => onselect(chat.id)} title={chat.title} type="button">
             {chat.title}
           </button>
           <button
@@ -497,7 +497,8 @@
         class="title ftitle"
         onclick={() => setOpen(folder.id, !open)}
         aria-expanded={open}
-        title={app.t(open ? "folder.collapse" : "folder.expand")}
+        title={folder.name}
+        aria-label={`${app.t(open ? "folder.collapse" : "folder.expand")}: ${folder.name}`}
         type="button"
       >
         <span class="caret">{open ? "▾" : "▸"}</span> 📁 {folder.name}
@@ -863,12 +864,17 @@
     flex: none;
     font-size: 1rem;
     color: var(--text-faint);
-    opacity: 0;
+  }
+
+  /* Out of the layout until the row is hovered or focused, so the title gets the
+     width instead of a row of invisible buttons squeezing it to "boardg…". */
+  .row .action {
+    display: none;
   }
 
   .row:hover .action,
-  .action:focus-visible {
-    opacity: 1;
+  .row:focus-within .action {
+    display: inline-flex;
   }
 
   .foot {
