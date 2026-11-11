@@ -6,6 +6,24 @@ aspirational.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-11
+
+### Added
+
+- Folders in the conversation list. The sidebar now shows a collapsible folder tree
+  (subfolders included) with the chats inside each folder; unfiled chats stay below it.
+  Folders can be created, renamed, deleted (their chats move to the top level, nothing is
+  deleted) and starred, and starred folders and chats sort first. A chat moves into a
+  folder from its row's folder picker or by dragging it onto the folder. On the archive
+  shelf or under a tag filter, only folders holding matching chats are shown. The folder
+  tree is built from the chats already loaded, so a large folder fills in as the list is
+  scrolled. `PATCH /api/folders/{id}` now accepts `name` and/or `pinned`; migration
+  `b2d7e4f19a63` adds `folder.pinned`.
+
+### Changed
+
+- The "All folders" dropdown filter is gone, replaced by the folder tree.
+
 ## [0.7.0] - 2026-11-05
 
 ### Added

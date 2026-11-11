@@ -285,6 +285,7 @@ export interface Folder {
   parent_id: string | null;
   name: string;
   sort_order: number;
+  pinned: boolean;
   created_at: number;
 }
 

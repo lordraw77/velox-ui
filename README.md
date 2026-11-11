@@ -22,7 +22,7 @@ is switched off degrades to an offline badge instead of an error.
 > abstraction with local (Ollama, llama.cpp) and cloud (Groq, OpenRouter, Mistral,
 > NVIDIA, Cloudflare, Gemini, Anthropic, OpenAI) adapters, local model management, a
 > web interface with streaming, virtual scrolling, markdown and per-reply speed
-> metrics, organization (folders, tags, pin/archive), full-text search, custom model
+> metrics, organization (nested folders, tags, star/archive), full-text search, custom model
 > presets, an admin user console, replies that survive leaving the page and announce
 > themselves when they land (ADR-0024), RAG (knowledge-base collections, document upload and
 > ingestion, sqlite-vec/pgvector retrieval, citations streamed into chats whose custom

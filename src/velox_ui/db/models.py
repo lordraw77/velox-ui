@@ -303,6 +303,7 @@ class Folder(Base):
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("folder.id", ondelete="CASCADE"))
     name: Mapped[str] = shortstr(200)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    pinned: Mapped[BoolInt] = mapped_column(default=False)
     created_at: Mapped[Timestamp]
 
     __table_args__ = (Index("ix_folder_user", "user_id", "parent_id"),)

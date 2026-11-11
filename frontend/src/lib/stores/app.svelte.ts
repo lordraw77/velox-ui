@@ -76,7 +76,6 @@ class AppStore {
   chatsCursor = $state<string | null>(null);
   chatsLoading = $state(false);
   chatsArchived = $state(false);
-  activeFolderId = $state<string | null>(null);
   activeTagId = $state<string | null>(null);
 
   folders = $state<Folder[]>([]);
@@ -291,7 +290,6 @@ class AppStore {
     try {
       const filter = {
         archived: this.chatsArchived,
-        folderId: this.activeFolderId ?? undefined,
         tagId: this.activeTagId ?? undefined,
       };
       const page = await api.chats(reset ? null : this.chatsCursor, filter);
@@ -304,14 +302,12 @@ class AppStore {
     }
   }
 
-  /** Switch which shelf, folder or tag the sidebar lists, and reload it. */
+  /** Switch which shelf or tag the sidebar lists, and reload it. */
   async setChatFilter(filter: {
     archived?: boolean;
-    folderId?: string | null;
     tagId?: string | null;
   }): Promise<void> {
     if (filter.archived !== undefined) this.chatsArchived = filter.archived;
-    if (filter.folderId !== undefined) this.activeFolderId = filter.folderId;
     if (filter.tagId !== undefined) this.activeTagId = filter.tagId;
     await this.loadChats(true);
   }

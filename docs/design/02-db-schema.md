@@ -198,6 +198,7 @@ CREATE TABLE folder (
   parent_id  CHAR(26) REFERENCES folder(id) ON DELETE CASCADE,
   name       TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  pinned     BOOLEAN NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX ix_folder_user ON folder(user_id, parent_id);

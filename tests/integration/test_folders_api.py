@@ -96,3 +96,25 @@ def test_rename_someone_elses_folder_is_not_found(client: TestClient, registered
         f"/api/folders/{folder_id}", headers=other_headers, json={"name": "Stolen"}
     )
     assert response.status_code == 404
+
+
+def test_star_and_unstar_folder(client: TestClient, registered: dict) -> None:
+    headers = _headers(registered)
+    folder = client.post("/api/folders", headers=headers, json={"name": "Work"}).json()
+    assert folder["pinned"] is False
+
+    starred = client.patch(
+        f"/api/folders/{folder['id']}", headers=headers, json={"pinned": True}
+    )
+    assert starred.status_code == 200, starred.text
+    assert starred.json()["pinned"] is True
+    assert starred.json()["name"] == "Work"
+
+    listed = client.get("/api/folders", headers=headers).json()
+    assert listed[0]["pinned"] is True
+
+    unstarred = client.patch(
+        f"/api/folders/{folder['id']}", headers=headers, json={"pinned": False, "name": "Play"}
+    )
+    assert unstarred.json()["pinned"] is False
+    assert unstarred.json()["name"] == "Play"

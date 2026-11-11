@@ -26,10 +26,11 @@ class CreateFolderRequest(BaseModel):
     sort_order: int = 0
 
 
-class RenameFolderRequest(BaseModel):
-    """Payload for renaming a folder."""
+class UpdateFolderRequest(BaseModel):
+    """Payload for renaming and/or starring a folder; omitted fields are untouched."""
 
-    name: str = Field(min_length=1, max_length=200)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    pinned: bool | None = None
 
 
 class MoveFolderRequest(BaseModel):
@@ -46,6 +47,7 @@ class FolderResponse(BaseModel):
     parent_id: str | None
     name: str
     sort_order: int
+    pinned: bool
     created_at: int
 
 
@@ -86,21 +88,28 @@ async def create_folder(
         return _to_response(folder)
 
 
-@router.patch("/{folder_id}", response_model=FolderResponse, summary="Rename a folder")
-async def rename_folder(
-    folder_id: str, payload: RenameFolderRequest, principal: CurrentPrincipal, state: State
+@router.patch("/{folder_id}", response_model=FolderResponse, summary="Rename or star a folder")
+async def update_folder(
+    folder_id: str, payload: UpdateFolderRequest, principal: CurrentPrincipal, state: State
 ) -> FolderResponse:
-    """Rename a folder.
+    """Rename and/or star a folder.
 
     Raises:
         NotFoundError: If it is not the caller's, or does not exist.
     """
     async with state.db.write() as session:
         repository = FolderRepository(session)
-        if not await repository.rename(folder_id, user_id=principal.user_id, name=payload.name):
+        if await repository.get(folder_id, user_id=principal.user_id) is None:
             raise NotFoundError("No such folder.")
+        if payload.name is not None:
+            await repository.rename(folder_id, user_id=principal.user_id, name=payload.name)
+        if payload.pinned is not None:
+            await repository.set_pinned(
+                folder_id, user_id=principal.user_id, pinned=payload.pinned
+            )
         folder = await repository.get(folder_id, user_id=principal.user_id)
-        assert folder is not None  # noqa: S101 - just renamed in this transaction
+        assert folder is not None  # noqa: S101 - just updated in this transaction
+        await session.refresh(folder)
         return _to_response(folder)
 
 
@@ -156,5 +165,6 @@ def _to_response(folder: Folder) -> FolderResponse:
         parent_id=folder.parent_id,
         name=folder.name,
         sort_order=folder.sort_order,
+        pinned=bool(folder.pinned),
         created_at=folder.created_at,
     )

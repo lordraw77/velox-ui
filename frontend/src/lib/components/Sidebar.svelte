@@ -5,12 +5,14 @@
   an infinite scroll and `OFFSET` over ten thousand conversations is exactly the cost
   the schema was designed to avoid (ADR-0007).
 
-  Folders and tags are flat pickers, not a drag-and-drop tree: the schema supports
-  arbitrary folder nesting, but the sidebar only needs "which shelf am I looking at"
-  (phase 6 scope decision — see the phase report).
+  Folders are a collapsible tree (starred folders first) holding their chats; chats
+  move between folders with the row's folder picker or by dragging onto a folder.
+  The tree is built client-side from the chats already loaded, so a folder shows what
+  has been scrolled in so far, like the rest of the list. Tags remain a flat filter.
 -->
 <script lang="ts">
   import { api } from "$lib/api/client";
+  import type { ChatSummary, Folder } from "$lib/api/types";
   import { app } from "$lib/stores/app.svelte";
   import { conversation } from "$lib/stores/conversation.svelte";
 
@@ -46,10 +48,182 @@
   let busy = $state(false);
 
   /** Pinned first, whatever order the list was patched into locally; stable within each group. */
-  let ordered = $derived([
-    ...app.chats.filter((chat) => chat.pinned),
-    ...app.chats.filter((chat) => !chat.pinned),
-  ]);
+  function pinnedFirst<T extends { pinned: boolean }>(items: T[]): T[] {
+    return [...items.filter((item) => item.pinned), ...items.filter((item) => !item.pinned)];
+  }
+
+  let folderIds = $derived(new Set(app.folders.map((folder) => folder.id)));
+
+  /** Chats grouped by folder; `null` holds the unfiled ones (and orphans of an unknown folder). */
+  let chatsByFolder = $derived.by(() => {
+    const groups = new Map<string | null, ChatSummary[]>();
+    for (const chat of pinnedFirst(app.chats)) {
+      const key = chat.folder_id && folderIds.has(chat.folder_id) ? chat.folder_id : null;
+      const group = groups.get(key);
+      if (group) group.push(chat);
+      else groups.set(key, [chat]);
+    }
+    return groups;
+  });
+
+  /** Child folders by parent; a folder whose parent is unknown is shown at the top level. */
+  let foldersByParent = $derived.by(() => {
+    const groups = new Map<string | null, Folder[]>();
+    for (const folder of pinnedFirst(app.folders)) {
+      const key = folder.parent_id && folderIds.has(folder.parent_id) ? folder.parent_id : null;
+      const group = groups.get(key);
+      if (group) group.push(folder);
+      else groups.set(key, [folder]);
+    }
+    return groups;
+  });
+
+  /** On the archive shelf or under a tag filter, only folders that hold something are shown. */
+  let filtering = $derived(app.chatsArchived || app.activeTagId !== null);
+
+  let populated = $derived.by(() => {
+    const result = new Set<string>();
+    const mark = (id: string): boolean => {
+      let has = (chatsByFolder.get(id)?.length ?? 0) > 0;
+      for (const child of foldersByParent.get(id) ?? []) has = mark(child.id) || has;
+      if (has) result.add(id);
+      return has;
+    };
+    for (const folder of foldersByParent.get(null) ?? []) mark(folder.id);
+    return result;
+  });
+
+  function visibleFolders(parent: string | null): Folder[] {
+    const children = foldersByParent.get(parent) ?? [];
+    return filtering ? children.filter((folder) => populated.has(folder.id)) : children;
+  }
+
+  const OPEN_KEY = "velox.openFolders";
+  let openFolders = $state<string[]>(readOpen());
+
+  function readOpen(): string[] {
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "[]");
+      return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function setOpen(id: string, open: boolean): void {
+    openFolders = open ? [...openFolders.filter((entry) => entry !== id), id] : openFolders.filter((entry) => entry !== id);
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify(openFolders));
+    } catch {
+      /* private mode: the tree still works, it just forgets what was open */
+    }
+  }
+
+  /** A filtered view opens every folder it shows, since closed ones would hide the matches. */
+  function isOpen(id: string): boolean {
+    return filtering || openFolders.includes(id);
+  }
+
+  let movingId: string | null = $state(null);
+  let dropTarget: string | null | undefined = $state(undefined);
+
+  /** Folders as a flat, indented list for the "move to" picker. */
+  let folderChoices = $derived.by(() => {
+    const out: { id: string; label: string }[] = [];
+    const walk = (parent: string | null, depth: number): void => {
+      for (const folder of foldersByParent.get(parent) ?? []) {
+        out.push({ id: folder.id, label: `${"– ".repeat(depth)}${folder.name}` });
+        walk(folder.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  });
+
+  function moveChat(id: string, folderId: string | null): void {
+    movingId = null;
+    const chat = app.chats.find((entry) => entry.id === id);
+    if (!chat || chat.folder_id === folderId) return;
+    void app.patchChat(id, { folder_id: folderId });
+    if (folderId) setOpen(folderId, true);
+  }
+
+  function onMovePick(id: string, event: Event): void {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    moveChat(id, value || null);
+  }
+
+  function onDragStart(id: string, event: DragEvent): void {
+    event.dataTransfer?.setData("application/x-velox-chat", id);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  }
+
+  function onDragOver(target: string | null, event: DragEvent): void {
+    if (!event.dataTransfer?.types.includes("application/x-velox-chat")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dropTarget = target;
+  }
+
+  function onDrop(target: string | null, event: DragEvent): void {
+    const id = event.dataTransfer?.getData("application/x-velox-chat");
+    dropTarget = undefined;
+    if (!id) return;
+    event.preventDefault();
+    event.stopPropagation();
+    moveChat(id, target);
+  }
+
+  async function newSubfolder(parentId: string | null): Promise<void> {
+    const name = prompt(app.t("folder.namePrompt"))?.trim();
+    if (!name) return;
+    try {
+      await api.createFolder(name, parentId);
+      await app.loadFolders();
+      if (parentId) setOpen(parentId, true);
+    } catch (error) {
+      app.report(error);
+    }
+  }
+
+  async function renameFolder(folder: Folder): Promise<void> {
+    const name = prompt(app.t("folder.namePrompt"), folder.name)?.trim();
+    if (!name || name === folder.name) return;
+    await patchFolder(folder.id, { name });
+  }
+
+  async function patchFolder(id: string, patch: { name?: string; pinned?: boolean }): Promise<void> {
+    try {
+      const updated = await api.updateFolder(id, patch);
+      app.folders = app.folders.map((folder) => (folder.id === id ? updated : folder));
+    } catch (error) {
+      app.report(error);
+    }
+  }
+
+  async function removeFolder(folder: Folder): Promise<void> {
+    if (!confirm(app.t("folder.deleteConfirm"))) return;
+    try {
+      await api.deleteFolder(folder.id);
+      // The server detaches the chats (and cascades subfolders); mirror that locally.
+      const gone = new Set<string>([folder.id]);
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const entry of app.folders) {
+          if (entry.parent_id && gone.has(entry.parent_id) && !gone.has(entry.id)) {
+            gone.add(entry.id);
+            grew = true;
+          }
+        }
+      }
+      app.folders = app.folders.filter((entry) => !gone.has(entry.id));
+      app.chats = app.chats.map((chat) =>
+        chat.folder_id && gone.has(chat.folder_id) ? { ...chat, folder_id: null } : chat,
+      );
+    } catch (error) {
+      app.report(error);
+    }
+  }
 
   let allSelected = $derived(app.chats.length > 0 && selected.length === app.chats.length);
 
@@ -139,9 +313,9 @@
     }
   }
 
-  function focusSelect(node: HTMLInputElement): void {
+  function focusSelect(node: HTMLInputElement | HTMLSelectElement): void {
     node.focus();
-    node.select();
+    if (node instanceof HTMLInputElement) node.select();
   }
 
   function archive(id: string, event: MouseEvent): void {
@@ -161,11 +335,6 @@
     if (remaining < 200 && app.chatsCursor && !app.chatsLoading) void app.loadChats(false);
   }
 
-  function onFolderChange(event: Event): void {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    void app.setChatFilter({ folderId: value || null });
-  }
-
   function onTagChange(event: Event): void {
     const value = (event.currentTarget as HTMLSelectElement).value;
     void app.setChatFilter({ tagId: value || null });
@@ -173,17 +342,6 @@
 
   function toggleArchivedShelf(): void {
     void app.setChatFilter({ archived: !app.chatsArchived });
-  }
-
-  async function addFolder(): Promise<void> {
-    const name = prompt(app.t("folder.namePrompt"));
-    if (!name) return;
-    try {
-      await api.createFolder(name);
-      await app.loadFolders();
-    } catch (error) {
-      app.report(error);
-    }
   }
 
   async function addTag(): Promise<void> {
@@ -198,92 +356,15 @@
   }
 </script>
 
-<!-- `inert` only when the drawer is closed *and* we are actually in drawer mode:
-     off-canvas content must not be focusable, but the permanent desktop sidebar
-     is never inert. The caller decides, since it owns the media query. -->
-<aside inert={inert}>
-  <div class="head">
-    <button class="btn btn-primary new" onclick={() => onselect(null)} type="button">
-      {app.t("chat.newChat")}
-    </button>
-    <!-- Desktop-only: folds the whole sidebar away to the left. -->
-    <button
-      class="btn btn-ghost btn-icon collapse"
-      onclick={() => app.setSidebarCollapsed(true)}
-      aria-label={app.t("nav.collapseSidebar")}
-      title={app.t("nav.collapseSidebar")}
-      type="button"
-      data-testid="sidebar-collapse"
-    >
-      «
-    </button>
-    <!-- Drawer-only: hidden above the breakpoint, where the sidebar is permanent. -->
-    <button
-      class="btn btn-ghost btn-icon close"
-      onclick={() => onclose?.()}
-      aria-label={app.t("nav.closeMenu")}
-      title={app.t("nav.closeMenu")}
-      type="button"
-    >
-      ×
-    </button>
-  </div>
-
-  <div class="filters">
-    <select value={app.activeFolderId ?? ""} onchange={onFolderChange} aria-label={app.t("folder.filterLabel")}>
-      <option value="">{app.t("folder.all")}</option>
-      {#each app.folders as folder (folder.id)}
-        <option value={folder.id}>{folder.name}</option>
-      {/each}
-    </select>
-    <button class="btn btn-ghost btn-icon" onclick={addFolder} title={app.t("folder.add")} type="button">
-      +
-    </button>
-
-    <select value={app.activeTagId ?? ""} onchange={onTagChange} aria-label={app.t("tag.filterLabel")}>
-      <option value="">{app.t("tag.all")}</option>
-      {#each app.tags as tag (tag.id)}
-        <option value={tag.id}>{tag.name}</option>
-      {/each}
-    </select>
-    <button class="btn btn-ghost btn-icon" onclick={addTag} title={app.t("tag.add")} type="button">
-      +
-    </button>
-  </div>
-
-  <button
-    class="btn btn-ghost shelf"
-    class:active={app.chatsArchived}
-    onclick={toggleArchivedShelf}
-    type="button"
-  >
-    {app.chatsArchived ? app.t("chat.showActive") : app.t("chat.showArchived")}
-  </button>
-
-  <div class="bulk">
-    <button class="btn btn-ghost" class:active={selecting} onclick={toggleSelecting} type="button" data-testid="select-mode">
-      {selecting ? app.t("chat.selectDone") : app.t("chat.select")}
-    </button>
-    {#if selecting}
-      <button class="btn btn-ghost" onclick={toggleAll} type="button" data-testid="select-all">
-        {allSelected ? app.t("chat.selectNone") : app.t("chat.selectAll")}
-      </button>
-      <button class="btn btn-ghost" disabled={busy || selected.length === 0} onclick={archiveSelected} type="button" data-testid="archive-selected">
-        {app.chatsArchived ? app.t("chat.unarchiveSelected") : app.t("chat.archiveSelected")}
-      </button>
-      <button class="btn btn-ghost danger" disabled={busy || selected.length === 0} onclick={deleteSelected} type="button" data-testid="delete-selected">
-        {app.t("chat.deleteSelected")}
-      </button>
-    {/if}
-  </div>
-
-  <nav onscroll={onListScroll}>
-    {#if app.chats.length === 0 && !app.chatsLoading}
-      <p class="hint empty">{app.t("chat.noChats")}</p>
-    {/if}
-
-    {#each ordered as chat (chat.id)}
-      <div class="row" class:active={conversation.id === chat.id}>
+{#snippet chatRow(chat: ChatSummary, depth: number)}
+      <div
+        class="row"
+        class:active={conversation.id === chat.id}
+        style:--depth={depth}
+        draggable={!selecting && renamingId !== chat.id}
+        ondragstart={(event) => onDragStart(chat.id, event)}
+        role="presentation"
+      >
         {#if selecting}
           <input
             class="check"
@@ -328,6 +409,32 @@
             ✎
           </button>
         {/if}
+        {#if movingId === chat.id}
+          <select
+            class="movepick"
+            value={chat.folder_id ?? ""}
+            onchange={(event) => onMovePick(chat.id, event)}
+            onblur={() => (movingId = null)}
+            aria-label={app.t("folder.moveChat")}
+            use:focusSelect
+          >
+            <option value="">{app.t("folder.noFolder")}</option>
+            {#each folderChoices as choice (choice.id)}
+              <option value={choice.id}>{choice.label}</option>
+            {/each}
+          </select>
+        {:else if app.folders.length > 0}
+          <button
+            class="btn btn-ghost btn-icon action"
+            onclick={(event) => { event.stopPropagation(); movingId = chat.id; }}
+            title={app.t("folder.moveChat")}
+            aria-label={app.t("folder.moveChat")}
+            type="button"
+            data-testid="move-chat"
+          >
+            📁
+          </button>
+        {/if}
         {#if app.chatsArchived}
           <button
             class="btn btn-ghost btn-icon action"
@@ -359,6 +466,152 @@
           ×
         </button>
       </div>
+{/snippet}
+
+{#snippet folderNode(folder: Folder, depth: number)}
+  {@const open = isOpen(folder.id)}
+  {@const chats = chatsByFolder.get(folder.id) ?? []}
+  {@const children = visibleFolders(folder.id)}
+  <div class="folder" data-testid="folder">
+    <div
+      class="row frow"
+      class:drop={dropTarget === folder.id}
+      style:--depth={depth}
+      ondragover={(event) => onDragOver(folder.id, event)}
+      ondragleave={() => (dropTarget = undefined)}
+      ondrop={(event) => onDrop(folder.id, event)}
+      role="presentation"
+    >
+      <button
+        class="btn btn-ghost btn-icon pin"
+        class:pinned={folder.pinned}
+        onclick={() => patchFolder(folder.id, { pinned: !folder.pinned })}
+        title={app.t(folder.pinned ? "folder.unstar" : "folder.star")}
+        aria-label={app.t(folder.pinned ? "folder.unstar" : "folder.star")}
+        type="button"
+        data-testid="star-folder"
+      >
+        {folder.pinned ? "★" : "☆"}
+      </button>
+      <button
+        class="title ftitle"
+        onclick={() => setOpen(folder.id, !open)}
+        aria-expanded={open}
+        title={app.t(open ? "folder.collapse" : "folder.expand")}
+        type="button"
+      >
+        <span class="caret">{open ? "▾" : "▸"}</span> 📁 {folder.name}
+        <span class="count">{chats.length}</span>
+      </button>
+      {#if !filtering}
+        <button class="btn btn-ghost btn-icon action" onclick={() => newSubfolder(folder.id)} title={app.t("folder.addSub")} aria-label={app.t("folder.addSub")} type="button">+</button>
+        <button class="btn btn-ghost btn-icon action" onclick={() => renameFolder(folder)} title={app.t("folder.rename")} aria-label={app.t("folder.rename")} type="button">✎</button>
+        <button class="btn btn-ghost btn-icon action" onclick={() => removeFolder(folder)} title={app.t("folder.delete")} aria-label={app.t("folder.delete")} type="button" data-testid="delete-folder">×</button>
+      {/if}
+    </div>
+    {#if open}
+      {#each children as child (child.id)}
+        {@render folderNode(child, depth + 1)}
+      {/each}
+      {#each chats as chat (chat.id)}
+        {@render chatRow(chat, depth + 1)}
+      {/each}
+      {#if chats.length === 0 && children.length === 0}
+        <p class="hint fempty" style:--depth={depth + 1}>{app.t("folder.empty")}</p>
+      {/if}
+    {/if}
+  </div>
+{/snippet}
+
+<!-- `inert` only when the drawer is closed *and* we are actually in drawer mode:
+     off-canvas content must not be focusable, but the permanent desktop sidebar
+     is never inert. The caller decides, since it owns the media query. -->
+<aside inert={inert}>
+  <div class="head">
+    <button class="btn btn-primary new" onclick={() => onselect(null)} type="button">
+      {app.t("chat.newChat")}
+    </button>
+    <!-- Desktop-only: folds the whole sidebar away to the left. -->
+    <button
+      class="btn btn-ghost btn-icon collapse"
+      onclick={() => app.setSidebarCollapsed(true)}
+      aria-label={app.t("nav.collapseSidebar")}
+      title={app.t("nav.collapseSidebar")}
+      type="button"
+      data-testid="sidebar-collapse"
+    >
+      «
+    </button>
+    <!-- Drawer-only: hidden above the breakpoint, where the sidebar is permanent. -->
+    <button
+      class="btn btn-ghost btn-icon close"
+      onclick={() => onclose?.()}
+      aria-label={app.t("nav.closeMenu")}
+      title={app.t("nav.closeMenu")}
+      type="button"
+    >
+      ×
+    </button>
+  </div>
+
+  <div class="filters">
+    <button class="btn btn-ghost addfolder" onclick={() => newSubfolder(null)} title={app.t("folder.add")} type="button" data-testid="add-folder">
+      📁+ {app.t("folder.add")}
+    </button>
+
+    <select value={app.activeTagId ?? ""} onchange={onTagChange} aria-label={app.t("tag.filterLabel")}>
+      <option value="">{app.t("tag.all")}</option>
+      {#each app.tags as tag (tag.id)}
+        <option value={tag.id}>{tag.name}</option>
+      {/each}
+    </select>
+    <button class="btn btn-ghost btn-icon" onclick={addTag} title={app.t("tag.add")} type="button">
+      +
+    </button>
+  </div>
+
+  <button
+    class="btn btn-ghost shelf"
+    class:active={app.chatsArchived}
+    onclick={toggleArchivedShelf}
+    type="button"
+  >
+    {app.chatsArchived ? app.t("chat.showActive") : app.t("chat.showArchived")}
+  </button>
+
+  <div class="bulk">
+    <button class="btn btn-ghost" class:active={selecting} onclick={toggleSelecting} type="button" data-testid="select-mode">
+      {selecting ? app.t("chat.selectDone") : app.t("chat.select")}
+    </button>
+    {#if selecting}
+      <button class="btn btn-ghost" onclick={toggleAll} type="button" data-testid="select-all">
+        {allSelected ? app.t("chat.selectNone") : app.t("chat.selectAll")}
+      </button>
+      <button class="btn btn-ghost" disabled={busy || selected.length === 0} onclick={archiveSelected} type="button" data-testid="archive-selected">
+        {app.chatsArchived ? app.t("chat.unarchiveSelected") : app.t("chat.archiveSelected")}
+      </button>
+      <button class="btn btn-ghost danger" disabled={busy || selected.length === 0} onclick={deleteSelected} type="button" data-testid="delete-selected">
+        {app.t("chat.deleteSelected")}
+      </button>
+    {/if}
+  </div>
+
+  <nav
+    onscroll={onListScroll}
+    class:drop={dropTarget === null}
+    ondragover={(event) => onDragOver(null, event)}
+    ondragleave={() => (dropTarget = undefined)}
+    ondrop={(event) => onDrop(null, event)}
+  >
+    {#if app.chats.length === 0 && visibleFolders(null).length === 0 && !app.chatsLoading}
+      <p class="hint empty">{app.t("chat.noChats")}</p>
+    {/if}
+
+    {#each visibleFolders(null) as folder (folder.id)}
+      {@render folderNode(folder, 0)}
+    {/each}
+    {#each chatsByFolder.get(null) ?? [] as chat (chat.id)}
+      {@render chatRow(chat, 0)}
     {/each}
 
     {#if app.chatsLoading}
@@ -466,6 +719,11 @@
     border-bottom: 1px solid var(--border);
   }
 
+  .addfolder {
+    flex: none;
+    font-size: 0.78rem;
+  }
+
   .filters select {
     flex: 1;
     min-width: 0;
@@ -517,6 +775,7 @@
   }
 
   .row {
+    padding-left: calc(var(--depth, 0) * 0.9rem);
     display: flex;
     gap: 0.15rem;
     align-items: center;
@@ -529,6 +788,44 @@
 
   .row.active {
     background: var(--bg-active);
+  }
+
+  nav.drop,
+  .row.drop {
+    outline: 1px dashed var(--border-strong);
+    outline-offset: -2px;
+  }
+
+  .ftitle {
+    font-weight: 600;
+  }
+
+  .caret {
+    display: inline-block;
+    width: 0.9em;
+    color: var(--text-faint);
+  }
+
+  .count {
+    margin-left: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--text-faint);
+  }
+
+  .fempty {
+    padding: 0.2rem 0.5rem 0.2rem calc(var(--depth, 0) * 0.9rem + 2rem);
+    font-size: 0.78rem;
+  }
+
+  .movepick {
+    flex: none;
+    max-width: 8rem;
+    padding: 0.2rem;
+    font-size: 0.78rem;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
   }
 
   .title {

@@ -29,6 +29,7 @@ class FolderSummary(msgspec.Struct, frozen=True):
     parent_id: str | None
     name: str
     sort_order: int
+    pinned: bool
     created_at: int
 
 
@@ -38,6 +39,7 @@ def _to_summary(folder: Folder) -> FolderSummary:
         parent_id=folder.parent_id,
         name=folder.name,
         sort_order=folder.sort_order,
+        pinned=bool(folder.pinned),
         created_at=folder.created_at,
     )
 
@@ -97,6 +99,15 @@ class FolderRepository:
             update(Folder)
             .where(Folder.id == folder_id, Folder.user_id == user_id)
             .values(name=name)
+        )
+        return bool(cast(CursorResult[object], result).rowcount)
+
+    async def set_pinned(self, folder_id: str, *, user_id: str, pinned: bool) -> bool:
+        """Star or unstar a folder. Returns whether a row was updated."""
+        result = await self._session.execute(
+            update(Folder)
+            .where(Folder.id == folder_id, Folder.user_id == user_id)
+            .values(pinned=pinned)
         )
         return bool(cast(CursorResult[object], result).rowcount)
 

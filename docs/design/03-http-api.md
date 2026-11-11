@@ -104,7 +104,7 @@ in the path (`models/hf.co/org/model:Q4_K_M`).
 | GET | `/api/search?q=&cursor=` | **phase 6** FTS over titles and messages, dialect-neutral (see 02-db-schema.md) |
 | POST | `/api/compare` | ○ **S** one prompt, N models, multiplexed stream |
 | GET/POST | `/api/folders` | **phase 6** flat list; nesting via `parent_id` |
-| PATCH/PUT/DELETE | `/api/folders/{id}`, `/api/folders/{id}/move` | **phase 6** rename; reparent + reorder; delete (children cascade, chats detach) |
+| PATCH/PUT/DELETE | `/api/folders/{id}`, `/api/folders/{id}/move` | **phase 6** rename and/or star (`name`, `pinned`); reparent + reorder; delete (children cascade, chats detach) |
 | GET/POST | `/api/tags` | **phase 6** |
 | PATCH/DELETE | `/api/tags/{id}` | **phase 6** |
 | PUT/DELETE | `/api/tags/{id}/chats/{chat_id}` | **phase 6** attach / detach, idempotent |

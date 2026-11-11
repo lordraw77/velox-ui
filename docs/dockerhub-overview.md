@@ -59,7 +59,7 @@ itself.
 - **Optional plugins** — image generation and voice (transcription and speech)
   against any OpenAI-compatible endpoint. Disabled by default and never even
   imported when off.
-- **Multi-user** — folders, tags, full-text search, custom model presets, an admin
+- **Multi-user** — nested, starrable folders, tags, full-text search, custom model presets, an admin
   console, and API keys.
 - **Import from Open WebUI** — `velox import openwebui` reconstructs the branching
   message tree, tags and folders from an Open WebUI chat export.

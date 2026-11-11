@@ -437,8 +437,9 @@ export class ApiClient {
     return this.#json("POST", "/api/folders", { name, parent_id: parentId ?? null });
   }
 
-  renameFolder(id: string, name: string): Promise<Folder> {
-    return this.#json("PATCH", `/api/folders/${id}`, { name });
+  /** Rename and/or star a folder; omitted fields are left as they are. */
+  updateFolder(id: string, patch: { name?: string; pinned?: boolean }): Promise<Folder> {
+    return this.#json("PATCH", `/api/folders/${id}`, patch);
   }
 
   moveFolder(id: string, parentId: string | null, sortOrder?: number): Promise<Folder> {
